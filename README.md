@@ -41,7 +41,7 @@ Installation
 Clone the repository:
 
 bash
-git clone https://github.com/YOUR_USERNAME/ransomware-response-system.git
+git clone https://github.com/TheBinaryBhatt/ransomware-response-system.git
 cd ransomware-response-system
 Backend Setup (FastAPI/Python):
 
