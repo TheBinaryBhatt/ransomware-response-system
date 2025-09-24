@@ -1,0 +1,202 @@
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: ransomware-response-system-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - app-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: ransomware-response-system-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - app-network
+
+  gateway:
+    build:
+      context: ./backend
+    image: ransomware-response-system-gateway
+    container_name: ransomware-response-system-gateway
+    command: ["python", "-m", "gateway.main"]
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+    environment:
+      - SERVICE_NAME=GATEWAY
+      - DATABASE_URL=${DATABASE_URL}
+      - SECRET_KEY=${SECRET_KEY}
+      - REDIS_URL=${REDIS_URL}
+      - INGESTION_DB_URL=${INGESTION_DB_URL}
+      - TRIAGE_DB_URL=${TRIAGE_DB_URL}
+      - RESPONSE_DB_URL=${RESPONSE_DB_URL}
+      - AUDIT_DB_URL=${AUDIT_DB_URL}
+      - PYTHONPATH=/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ingestion_service:
+        condition: service_started
+      triage_service:
+        condition: service_started
+    restart: on-failure
+    networks:
+      - app-network
+
+  ingestion_service:
+    build:
+      context: ./backend
+    image: ransomware-response-system-ingestion
+    container_name: ransomware-response-system-ingestion
+    command: ["uvicorn", "ingestion_service.main:app", "--host", "0.0.0.0", "--port", "8001"]
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+    environment:
+      - SERVICE_NAME=INGESTION
+      - INGESTION_DB_URL=${INGESTION_DB_URL}
+      - TRIAGE_DB_URL=${TRIAGE_DB_URL}
+      - RESPONSE_DB_URL=${RESPONSE_DB_URL}
+      - AUDIT_DB_URL=${AUDIT_DB_URL}
+      - DATABASE_URL=${DATABASE_URL}
+      - SECRET_KEY=${SECRET_KEY}
+      - REDIS_URL=${REDIS_URL}
+      - PYTHONPATH=/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8001:8001"
+    restart: on-failure
+    networks:
+      - app-network
+
+  triage_service:
+    build:
+      context: ./backend
+    image: ransomware-response-system-triage
+    container_name: ransomware-response-system-triage
+    command: ["uvicorn", "triage_service.main:app", "--host", "0.0.0.0", "--port", "8002"]
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+    environment:
+      - SERVICE_NAME=TRIAGE
+      - INGESTION_DB_URL=${INGESTION_DB_URL}
+      - TRIAGE_DB_URL=${TRIAGE_DB_URL}
+      - RESPONSE_DB_URL=${RESPONSE_DB_URL}
+      - AUDIT_DB_URL=${AUDIT_DB_URL}
+      - DATABASE_URL=${DATABASE_URL}
+      - SECRET_KEY=${SECRET_KEY}
+      - REDIS_URL=${REDIS_URL}
+      - PYTHONPATH=/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8002:8002"
+    restart: on-failure
+    networks:
+      - app-network
+
+  response_service:
+    build:
+      context: ./backend
+    image: ransomware-response-system-response
+    container_name: ransomware-response-system-response
+    command: ["uvicorn", "response_service.main:app", "--host", "0.0.0.0", "--port", "8003"]
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+    environment:
+      - SERVICE_NAME=RESPONSE
+      - INGESTION_DB_URL=${INGESTION_DB_URL}
+      - TRIAGE_DB_URL=${TRIAGE_DB_URL}
+      - RESPONSE_DB_URL=${RESPONSE_DB_URL}
+      - AUDIT_DB_URL=${AUDIT_DB_URL}
+      - DATABASE_URL=${DATABASE_URL}
+      - SECRET_KEY=${SECRET_KEY}
+      - REDIS_URL=${REDIS_URL}
+      - PYTHONPATH=/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8003:8003"
+    restart: on-failure
+    networks:
+      - app-network
+
+  audit_service:
+    build:
+      context: ./backend
+    image: ransomware-response-system-audit
+    container_name: ransomware-response-system-audit
+    command: ["uvicorn", "audit_service.main:app", "--host", "0.0.0.0", "--port", "8004"]
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+    environment:
+      - SERVICE_NAME=AUDIT
+      - INGESTION_DB_URL=${INGESTION_DB_URL}
+      - TRIAGE_DB_URL=${TRIAGE_DB_URL}
+      - RESPONSE_DB_URL=${RESPONSE_DB_URL}
+      - AUDIT_DB_URL=${AUDIT_DB_URL}
+      - DATABASE_URL=${DATABASE_URL}
+      - SECRET_KEY=${SECRET_KEY}
+      - REDIS_URL=${REDIS_URL}
+      - PYTHONPATH=/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8004/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    ports:
+      - "8004:8004"
+    restart: on-failure
+    networks:
+      - app-network
+
+volumes:
+  postgres_data:
+
+networks:
+  app-network:
+    driver: bridge

@@ -1,31 +1,44 @@
 import axios from 'axios';
-import { Incident, ApiResponse } from '../types/Incident';
+import { Incident } from '../types/Incident';
 
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
 
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
+function getAuthHeaders() {
+  const token = localStorage.getItem('jwt_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
-export const incidentAPI = {
-  getIncidents: async (): Promise<ApiResponse<Incident[]>> => {
-    try {
-      const response = await api.get('/incidents');
-      return { data: response.data };
-    } catch (error) {
-      return { error: 'Failed to fetch incidents' };
-    }
+export const api = {
+  getIncidents: async (): Promise<Incident[]> => {
+    const response = await axios.get(`${API_BASE_URL}/incidents`, {
+      headers: getAuthHeaders(),
+    });
+    return response.data;
   },
 
-  triggerResponse: async (incidentId: string): Promise<ApiResponse<any>> => {
-    try {
-      const response = await api.post(`/incidents/${incidentId}/respond`);
-      return { data: response.data };
-    } catch (error) {
-      return { error: 'Failed to trigger response' };
-    }
+  getIncident: async (id: string): Promise<Incident> => {
+    const response = await axios.get(`${API_BASE_URL}/incidents/${id}`, {
+      headers: getAuthHeaders(),
+    });
+    return response.data;
   },
+
+  respondToIncident: async (id: string): Promise<void> => {
+    await axios.post(`${API_BASE_URL}/incidents/${id}/respond`, {}, { headers: getAuthHeaders() });
+  },
+
+  getAuditLogs: async (): Promise<any[]> => {
+    const response = await axios.get(`${API_BASE_URL}/logs`, {
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  },
+};
+
+export const getIncidentStats = async (): Promise<any> => {
+  const token = localStorage.getItem('jwt_token');
+  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+  const response = await fetch(`${API_BASE_URL}/incidents/stats`, { headers });
+  if (!response.ok) throw new Error('Failed to fetch incident statistics');
+  return response.json();
 };
