@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, Query, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from core.database import get_db
 from .models import ResponseIncident
 from .integrations.abuseipdb_client import abuseipdb_client
@@ -20,7 +21,6 @@ from celery.result import AsyncResult
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
 
-
 @router.post("/token")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user = authenticate_user(form_data.username, form_data.password)
@@ -29,10 +29,9 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     access_token = create_access_token(data={"sub": user["username"]})
     return {"access_token": access_token, "token_type": "bearer"}
 
-
 @router.post("/webhook/siem")
 @limiter.limit("10/minute")
-async def receive_siem_alert(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
+async def receive_siem_alert(request: Request, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
     """
     Endpoint to receive SIEM webhook alerts.
     Parses payload, creates incident record.
@@ -79,38 +78,58 @@ async def receive_siem_alert(request: Request, db: Session = Depends(get_db), us
     # Save incident
     db.add(incident)
     try:
-        db.commit()
+        await db.commit()
     except Exception as e:
-        db.rollback()
+        await db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to create incident: {e}")
 
     return {"status": "success", "incident_id": incident.id}
 
-
 @router.post("/incidents/{incident_id}/respond")
 @limiter.limit("5/minute")
-async def respond_to_incident(incident_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    incident = db.query(ResponseIncident).filter(ResponseIncident.id == incident_id).first()
+async def respond_to_incident(request: Request, incident_id: str, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    """
+    Trigger the response workflow for this incident.
+    Allows both automated AI-agent triggers and analyst-initiated actions.
+    """
+    # Parse request body (JSON)
+    data = await request.json()
+    is_automated = data.get("automated", False)
+    analysis = data.get("analysis", {})
+    agent_id = analysis.get("agent_id", None) or (user["username"] if user else "agentic-ai")
+
+    # Fetch incident
+    result = await db.execute(select(ResponseIncident).where(ResponseIncident.id == incident_id))
+    incident = result.scalar_one_or_none()
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
+    
+    # Authorization: allow if automated trigger or a real user (analyst)
+    if is_automated or user:
+        # Optionally: store AI analysis summary if present
+        if analysis:
+            incident.analysis = analysis  # assuming you have an 'analysis' JSON/Text column
+        incident.response_status = "pending"
+        
+        # Trigger response workflow (Celery/async task/logic)
+        task_id = trigger_full_response(incident_id, agent_id)
+        incident.current_task_id = task_id
+        await db.commit()
 
-    agent_id = incident.raw_data.get("agent_id")
-    if not agent_id:
-        raise HTTPException(status_code=400, detail="Incident missing agent_id for response")
-
-    # Trigger the full async workflow
-    task_id = trigger_full_response(incident_id, agent_id)
-
-    # Save task id for monitoring
-    incident.current_task_id = task_id
-    db.commit()
-
-    return {"status": "workflow_triggered", "incident_id": incident_id, "task_id": task_id}
+        return {
+            "status": "workflow_triggered",
+            "incident_id": incident_id,
+            "task_id": task_id,
+            "triggered_by": "AI agent" if is_automated else agent_id
+        }
+    else:
+        raise HTTPException(status_code=403, detail="Unauthorized (must be analyst or automated)")
 
 
 @router.get("/workflows/{incident_id}/status")
-async def get_workflow_status(incident_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    incident = db.query(ResponseIncident).filter(ResponseIncident.id == incident_id).first()
+async def get_workflow_status(request: Request, incident_id: str, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    result = await db.execute(select(ResponseIncident).where(ResponseIncident.id == incident_id))
+    incident = result.scalar_one_or_none()
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
 
@@ -124,28 +143,26 @@ async def get_workflow_status(incident_id: str, db: Session = Depends(get_db), u
 
     return {"state": state, "info": info}
 
-
 @router.get("/threatintel/abuseipdb")
 @limiter.limit("10/minute")
-async def query_abuseipdb(ip: str = Query(..., description="IP address"), user=Depends(get_current_user)):
+async def query_abuseipdb(request: Request, ip: str = Query(..., description="IP address"), user=Depends(get_current_user)):
+    if not abuseipdb_client.is_configured():
+        raise HTTPException(status_code=400, detail="AbuseIPDB integration not configured")
     try:
         async with abuseipdb_client:
             data = await abuseipdb_client.check_ip(ip)
         return {"status": "success", "data": data}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AbuseIPDB query failed: {e}")
-
+        raise HTTPException(status_code=500, detail=f"AbuseIPDB query failed: {e}") from e
 
 @router.get("/threatintel/malwarebazaar")
 @limiter.limit("10/minute")
-async def query_malwarebazaar(hash: str = Query(..., description="File hash"), user=Depends(get_current_user)):
+async def query_malwarebazaar(request: Request, hash: str = Query(..., description="File hash"), user=Depends(get_current_user)):
     try:
         async with malwarebazaar_client:
             data = await malwarebazaar_client.query_hash(hash)
         return {"status": "success", "data": data}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"MalwareBazaar query failed: {e}")
+        raise HTTPException(status_code=500, detail=f"MalwareBazaar query failed: {e}") from e
 
-@router.exception_handler(RateLimitExceeded)
-async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
-    return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
+# Rate limit exception handler will be added to main app, not router

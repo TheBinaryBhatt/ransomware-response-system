@@ -1,12 +1,26 @@
-from sqlalchemy import Column, Integer, String, DateTime, JSON, Boolean, Float, Text
-from sqlalchemy.ext.declarative import declarative_base
-from datetime import datetime
+import hashlib
+import json
 import uuid
+from datetime import datetime
 
-Base = declarative_base()
+from sqlalchemy import Column, Integer, String, DateTime, JSON, Boolean, Float, Text, event
+
+from .database import Base, GUID
 
 def generate_uuid():
     return str(uuid.uuid4())
+
+class User(Base):
+    __tablename__ = "users"
+    
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    username = Column(String, unique=True, index=True, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=False)
+    password_hash = Column(String, nullable=False)
+    is_active = Column(Boolean, default=True)
+    is_superuser = Column(Boolean, default=False)
+    role = Column(String, default="analyst")
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class Incident(Base):
     __tablename__ = "incidents"
@@ -32,16 +46,39 @@ class Incident(Base):
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
-    
+
     id = Column(Integer, primary_key=True, index=True)
-    log_id = Column(String, unique=True, index=True, default=generate_uuid)
-    timestamp = Column(DateTime, default=datetime.utcnow)
-    user_id = Column(String, index=True)
-    action = Column(String)
-    resource_type = Column(String)
-    resource_id = Column(String, index=True)
-    details = Column(JSON)
-    ip_address = Column(String)
-    user_agent = Column(Text)
-    previous_state = Column(JSON)
-    new_state = Column(JSON)
+    log_id = Column(String, unique=True, index=True, default=generate_uuid, nullable=False)
+    actor = Column(String, nullable=False, default="system")
+    action = Column(String, nullable=False)
+    target = Column(String, nullable=True)
+    resource_type = Column(String, nullable=False, default="system")
+    status = Column(String, nullable=False, default="info")
+    details = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    integrity_hash = Column(String, nullable=False)
+    immutable = Column(Boolean, nullable=False, default=True)
+
+    def _payload_for_hash(self) -> str:
+        payload = {
+            "log_id": self.log_id,
+            "actor": self.actor,
+            "action": self.action,
+            "target": self.target,
+            "resource_type": self.resource_type,
+            "status": self.status,
+            "details": self.details or {},
+            "created_at": str(self.created_at) if self.created_at else "",
+        }
+        return json.dumps(payload, sort_keys=True, default=str)
+
+
+@event.listens_for(AuditLog, "before_insert")
+def _set_core_integrity(mapper, connection, target: AuditLog):
+    payload = target._payload_for_hash()
+    target.integrity_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+@event.listens_for(AuditLog, "before_update")
+def _prevent_core_mutation(mapper, connection, target):
+    raise ValueError("Audit logs are immutable and cannot be modified")

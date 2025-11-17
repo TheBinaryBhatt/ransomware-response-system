@@ -1,5 +1,5 @@
 import React from 'react';
-import { Incident } from '../types/Incident';
+import type { Incident } from '../types/Incident';
 
 interface IncidentListProps {
   incidents: Incident[];

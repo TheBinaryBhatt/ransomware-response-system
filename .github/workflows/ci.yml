@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "develop"]
+  pull_request:
+    branches: ["*"]
+
+jobs:
+  security_scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@v0.20.0
+        with:
+          scan-type: fs
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          format: table
+          exit-code: "1"
+          timeout: 10m
+
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: admin
+          POSTGRES_PASSWORD: supersecretpassword
+          POSTGRES_DB: ransomware_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U admin -d ransomware_db"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+      rabbitmq:
+        image: rabbitmq:3-management
+        ports:
+          - 5672:5672
+          - 15672:15672
+    env:
+      DATABASE_URL: postgresql+asyncpg://admin:supersecretpassword@localhost:5432/ransomware_db
+      INGESTION_DB_URL: postgresql+asyncpg://admin:supersecretpassword@localhost:5432/ransomware_db
+      TRIAGE_DB_URL: postgresql+asyncpg://admin:supersecretpassword@localhost:5432/ransomware_db
+      RESPONSE_DB_URL: postgresql+asyncpg://admin:supersecretpassword@localhost:5432/ransomware_db
+      AUDIT_DB_URL: postgresql+asyncpg://admin:supersecretpassword@localhost:5432/ransomware_db
+      SECRET_KEY: supersecretkey_supersecretkey_supersecretkey_123
+      REDIS_URL: redis://localhost:6379/0
+      CELERY_BROKER_URL: redis://localhost:6379/0
+      CELERY_RESULT_BACKEND: redis://localhost:6379/0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r requirements-test.txt
+
+      - name: Run Ruff
+        run: ruff check backend
+
+      - name: Run Bandit
+        run: bandit -c bandit.yaml -r backend
+
+      - name: Run pytest
+        run: pytest backend/tests -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run tests
+        env:
+          CI: true
+        run: npm test -- --watch=false
+

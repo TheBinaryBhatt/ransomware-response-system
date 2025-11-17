@@ -1,4 +1,5 @@
-import { io, Socket } from 'socket.io-client';
+import type { Socket } from 'socket.io-client';
+import { io } from 'socket.io-client';
 
 class WebSocketService {
   private socket: Socket | null = null;
@@ -37,13 +38,13 @@ class WebSocketService {
     }
   }
 
-  onEvent(event: string, callback: (data: any) => void) {
+  onEvent<T>(event: string, callback: (data: T) => void) {
     if (this.socket) {
       this.socket.on(event, callback);
     }
   }
 
-  emitEvent(event: string, data: any) {
+  emitEvent<T>(event: string, data: T) {
     if (this.socket) {
       this.socket.emit(event, data);
     }

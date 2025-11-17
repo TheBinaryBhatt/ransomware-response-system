@@ -117,22 +117,58 @@ docker-compose up -d
 ### Configuration
 
 1. **Environment Setup**
-Backend configuration
-cp backend/.env.example backend/.env
+```
+python scripts/bootstrap_env.py
+```
+This creates `backend/.env`, `frontend/.env`, and (if missing) `config/integrations.yaml`. Update the generated files with real secrets, database URLs, and API keys.
 
-Configure your API keys and database URLs
-Frontend configuration
-cp frontend/.env.example frontend/.env
+2. **Integration Overrides (Optional, for multi-env deployments)**
+   ```
+   cp config/integrations.example.yaml config/integrations.yaml
+   ```
+   Update enabled integrations, API URLs, and cloud replica hints per environment. The backend automatically loads this file (set `INTEGRATION_CONFIG_PATH` if you keep it elsewhere).
 
-Set your API endpoints
-
-
-2. **Database Initialization**
+3. **Database Initialization**
 Run migrations
 python -m alembic upgrade head
 
 Seed initial data
 python scripts/seed_data.py
+
+### 🔧 Environment Configuration
+
+Key environment variables (define in `.env` or your orchestration platform):
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `DATABASE_URL` | Primary PostgreSQL connection string | `postgresql+asyncpg://admin:supersecretpassword@postgres:5432/ransomware_db` |
+| `SECRET_KEY` | JWT signing secret (>=32 chars) | _required_ |
+| `REDIS_URL` | Redis connection for Celery and caching | `redis://redis:6379/0` |
+| `ENABLED_INTEGRATIONS` | Comma-separated list of active integrations (`wazuh,pfsense,abuseipdb,malwarebazaar`) | `wazuh,pfsense,abuseipdb,malwarebazaar` |
+| `AUTO_RESPONSE_ENABLED` | Toggle automated response workflows (`true`/`false`) | `true` |
+| `WAZUH_API_URL`, `WAZUH_USERNAME`, `WAZUH_PASSWORD` | Wazuh API configuration | `https://localhost:55000`, `wazuh_user`, `wazuh_pass` |
+| `PFSENSE_API_URL`, `PFSENSE_API_TOKEN` | pfSense API configuration | `https://pfsense.example.com`, _unset_ |
+| `ABUSEIPDB_API_KEY` | AbuseIPDB enrichment key | _unset_ |
+| `MALWAREBAZAAR_API_KEY` | MalwareBazaar enrichment key (optional) | _unset_ |
+
+Additional configuration examples and workflow diagrams are documented in [`docs/event-flow.md`](docs/event-flow.md) and [`docs/demo-playbook.md`](docs/demo-playbook.md).
+
+### 🔐 Default Accounts
+
+| Role | Username | Password | Notes |
+|------|----------|----------|-------|
+| Administrator | `admin` | `admin123` | Full access, can trigger responses |
+| SOC Analyst | `soc_analyst` | `analyst123` | Read incidents, triage, view metrics |
+
+> ⚠️ **Important:** Rotate the default credentials immediately in production. Use `backend/create_admin.py` or direct SQL updates to manage additional users.
+
+Example (running from Windows host while services run inside Docker):
+
+```powershell
+python backend/create_admin.py --username admin --password admin123 --role admin --db-url postgresql+asyncpg://admin:supersecretpassword@localhost:5432/ransomware_db
+```
+
+> Use `--db-url` to point at `localhost` when executing outside the Docker network, or omit it when running `docker compose exec gateway ...`.
 
 3. **Security Tool Integration**
 Configure Wazuh connection
@@ -212,6 +248,53 @@ ransomware-response-system/
 ├── docker-compose.yml # Container orchestration
 └── docs/ # Documentation
 
+### ✅ Quality Gates
+
+Run the full quality checklist before opening a pull request:
+
+```bash
+# Consolidated security/static analysis
+python scripts/security_checks.py
+
+# Python back-end tests
+pytest backend/tests -q
+
+# Front-end tests
+cd frontend
+npm install
+npm run lint
+# macOS/Linux
+CI=true npm test -- --watch=false
+# Windows PowerShell
+$env:CI="true"; npm test -- --watch=false
+npm run build
+cd ..
+```
+
+### 🔒 Security Hardening (Phase 7)
+
+- TLS + security headers via the production Caddyfile (`deploy/Caddyfile`)
+- Immutable audit trail and RBAC enforcement through the gateway + audit service
+- Vulnerability scanning & Docker hardening checklist in [`docs/security-hardening.md`](docs/security-hardening.md)
+
+### 🤖 Continuous Integration
+
+GitHub Actions workflow [`ci.yml`](.github/workflows/ci.yml) executes the quality gates (linting, security scanning, unit tests, and front-end checks) on every push and pull request targeting `main` or `develop`.
+- Trivy filesystem scan blocks builds on HIGH/CRITICAL vulnerabilities.
+
+### ☁️ Deployment & Cloud Readiness
+
+- TLS-enabled reverse proxy with automatic Let's Encrypt: see [`docs/deployment.md`](docs/deployment.md) + [`deploy/`](deploy/).
+- Cloud rollout + DDD alignment guidance: [`docs/architecture/ddd.md`](docs/architecture/ddd.md) and [`docs/cloud-readiness.md`](docs/cloud-readiness.md).
+- Production compose overlay: `docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d`
+- Includes container hardening (`no-new-privileges`) and guidance for secret management.
+
+### 📚 Demo & Evaluator Assets
+
+- Live demo script: [`docs/evaluator-demo.md`](docs/evaluator-demo.md)
+- Threat-response walkthrough: [`docs/demo-playbook.md`](docs/demo-playbook.md)
+- Event flow diagrams: [`docs/event-flow.md`](docs/event-flow.md)
+
 
 
 ### Contributing Guidelines
@@ -245,16 +328,36 @@ ransomware-response-system/
 
 ## 📈 Roadmap
 
-### Phase 5: Advanced Analytics (In Progress)
-- [ ] Machine learning threat prediction
-- [ ] Advanced behavioral analysis
-- [ ] Custom threat hunting workflows
+### Phase 5: Microservices & Event Bus (✅ Complete)
+- [x] RabbitMQ topic routing (`ransomware_events`)
+- [x] Dedicated ingestion/triage/response/audit consumers
+- [x] Gateway WebSocket bridge for real-time dashboard updates
 
-### Phase 6: Enterprise Features (Planned)
-- [ ] Multi-tenant architecture
-- [ ] SSO integration
-- [ ] Advanced reporting & compliance
-- [ ] Cloud deployment templates
+### Phase 6: Audit Logging & SOC Compliance (✅ Complete)
+- [x] Immutable audit logs with SHA-256 integrity hashes
+- [x] Role-based access control + admin user management endpoints
+- [x] Security event fan-out to audit store and WebSocket clients
+
+### Phase 7: Security Hardening (✅ Complete)
+- [x] Static analysis suite (`scripts/security_checks.py`)
+- [x] HTTPS with automatic Let's Encrypt via Caddy overlay
+- [x] Vulnerability scanning & Docker hardening playbook (`docs/security-hardening.md`)
+- [x] Security headers and event-driven login auditing
+
+### Phase 8: Scalability & Cloud Integration (✅ Complete)
+- [x] DDD documentation + bounded-context ownership (`docs/architecture/ddd.md`)
+- [x] Config-driven integrations via `config/integrations.yaml`
+- [x] Cloud readiness checklist (`docs/cloud-readiness.md`)
+
+### Phase 9: Documentation, Demos, OSS Release (✅ Complete)
+- [x] Evaluator/demo guide (`docs/evaluator-demo.md`)
+- [x] README upgrades with links to assets/diagrams
+- [x] Config samples + instructions for open-source users
+
+### Phase 10: Automated Testing & DevOps (✅ Complete)
+- [x] GitHub Actions CI (security scan + backend + frontend jobs)
+- [x] Unified test runner (`scripts/run_tests.py`)
+- [x] Local security/test scripts documented in README
 
 ---
 

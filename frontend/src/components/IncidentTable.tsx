@@ -1,5 +1,6 @@
 import React from 'react';
-import { Incident, IncidentStatus } from '../types/Incident';
+import type { Incident} from '../types/Incident';
+import { IncidentStatus } from '../types/Incident';
 import { useNavigate } from 'react-router-dom'; // Import useNavigate
 
 interface IncidentTableProps {

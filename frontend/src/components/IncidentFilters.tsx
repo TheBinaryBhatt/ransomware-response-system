@@ -2,14 +2,20 @@ import React from 'react';
 import { useForm } from 'react-hook-form';
 import { Severity, IncidentStatus } from '../types/Incident';
 
+interface IncidentFilterValues {
+  severity: string;
+  status: string;
+  confidence: string;
+}
+
 interface IncidentFiltersProps {
-  onFilter: (filters: any) => void;
+  onFilter: (filters: IncidentFilterValues) => void;
 }
 
 const IncidentFilters: React.FC<IncidentFiltersProps> = ({ onFilter }) => {
-  const { register, handleSubmit } = useForm();
+  const { register, handleSubmit } = useForm<IncidentFilterValues>();
 
-  const onSubmit = (data: any) => {
+  const onSubmit = (data: IncidentFilterValues) => {
     onFilter(data);
   };
 

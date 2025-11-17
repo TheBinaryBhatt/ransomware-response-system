@@ -1,5 +1,6 @@
 import React from 'react';
-import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, PieLabelRenderProps } from 'recharts';
+import type { PieLabelRenderProps } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 interface IncidentTypesProps {
   data: Array<{ name: string; value: number }>;

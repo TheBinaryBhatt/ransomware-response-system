@@ -8,17 +8,19 @@ logger = logging.getLogger(__name__)
 class WazuhClient:
     def __init__(self, base_url: Optional[str] = None, 
                  username: Optional[str] = None, 
-                 password: Optional[str] = None):
-        self.base_url = base_url or "https://localhost:55000"
-        self.username = username or "wazuh_user"
-        self.password = password or "wazuh_pass"
+                 password: Optional[str] = None,
+                 verify_ssl: bool = False):
+        self.base_url = base_url or str(settings.wazuh_api_url)
+        self.username = username or settings.wazuh_username
+        self.password = password or settings.wazuh_password
+        self.verify_ssl = verify_ssl
         self.session = None
     
     async def __aenter__(self):
         self.session = aiohttp.ClientSession(
             base_url=self.base_url,
             auth=aiohttp.BasicAuth(self.username, self.password),
-            connector=aiohttp.TCPConnector(verify_ssl=False)
+            connector=aiohttp.TCPConnector(ssl=self.verify_ssl)
         )
         return self
     

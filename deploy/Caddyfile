@@ -1,0 +1,22 @@
+{
+  email {$LETSENCRYPT_EMAIL}
+}
+
+{$APP_DOMAIN} {
+  encode gzip
+
+  @api path /api* /socket.io*
+  reverse_proxy @api gateway:8000
+
+  reverse_proxy frontend:3000
+  header {
+    Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "DENY"
+    Referrer-Policy "no-referrer-when-downgrade"
+  }
+  tls {
+    alpn http/1.1 h2
+  }
+}
+

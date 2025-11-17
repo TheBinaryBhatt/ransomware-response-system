@@ -1,0 +1,47 @@
+# Testing dependencies for Ransomware Response System
+
+# Core testing framework
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-mock>=3.11.0
+pytest-cov>=4.1.0
+
+# Test containers for integration testing
+testcontainers[postgres]>=3.7.0
+testcontainers[redis]>=3.7.0
+testcontainers[rabbitmq]>=3.7.0
+
+# HTTP testing
+httpx>=0.24.0
+requests>=2.31.0
+
+# Async/await support  
+aiofiles>=23.0.0
+asyncpg>=0.28.0
+
+# Celery testing
+pytest-celery>=0.0.0
+
+# FastAPI testing dependencies
+fastapi[all]>=0.100.0
+uvicorn[standard]>=0.22.0
+
+# Database testing
+sqlalchemy[asyncio]>=2.0.0
+alembic>=1.11.0
+
+# Mock external services
+responses>=0.23.0
+httpretty>=1.1.4
+
+# Performance testing
+pytest-benchmark>=4.0.0
+locust>=2.15.0
+
+# Reporting
+pytest-html>=3.2.0
+pytest-json-report>=1.5.0
+
+# Static analysis
+ruff>=0.5.0
+bandit>=1.7.6

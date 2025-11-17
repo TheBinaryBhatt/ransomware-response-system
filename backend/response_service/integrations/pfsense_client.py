@@ -8,12 +8,14 @@ logger = logging.getLogger(__name__)
 class PfSenseClient:
     def __init__(self, base_url: Optional[str] = None, 
                  api_key: Optional[str] = None):
-        self.base_url = base_url or "https://pfsense.example.com"
-        self.api_key = api_key or "pfsense_api_key"
+        self.base_url = base_url or str(settings.pfsense_api_url)
+        self.api_key = api_key or settings.pfsense_api_token
     
     async def block_ip(self, ip_address: str, reason: str = "Ransomware incident") -> Dict[str, Any]:
         """Block an IP address in pfSense"""
         try:
+            if not self.api_key:
+                raise RuntimeError("pfSense API token not configured")
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json"

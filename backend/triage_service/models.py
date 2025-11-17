@@ -10,3 +10,5 @@ class TriageIncident(IncidentBase):
     confidence = Column(Float)
     reasoning = Column(Text)
     status = Column(String, default="pending")
+    actions = Column(Text, default="[]")  # Stores recommended/actual actions as JSON string
+

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { io, Socket } from 'socket.io-client';
+import type { Socket } from 'socket.io-client';
+import { io } from 'socket.io-client';
 
 export const useWebSocket = (url: string) => {
   const socketRef = useRef<Socket | null>(null);
@@ -29,14 +30,14 @@ export const useWebSocket = (url: string) => {
   }, [url]);
 
   // Function to emit events
-  const emitEvent = useCallback((event: string, data: any) => {
+  const emitEvent = useCallback(<T,>(event: string, data: T) => {
     if (socketRef.current) {
       socketRef.current.emit(event, data);
     }
   }, []);
 
   // Function to listen to events
-  const onEvent = useCallback((event: string, callback: (data: any) => void) => {
+  const onEvent = useCallback(<T,>(event: string, callback: (data: T) => void) => {
     if (socketRef.current) {
       socketRef.current.on(event, callback);
       

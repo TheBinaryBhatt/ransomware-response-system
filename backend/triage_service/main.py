@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from core.database import Base, engine
 from .routes import router as service_router
+from . import consumer
 
 app = FastAPI(title="Triage Service", version="1.0.0")
 
@@ -22,6 +23,8 @@ async def startup_event():
     from . import models  # ensure models are registered
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    # Start event consumer in background thread
+    consumer.start()
 
 
 @app.get("/health")
@@ -36,4 +39,4 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8002)
+    uvicorn.run(app, host="0.0.0.0", port=8002)  # nosec B104

@@ -1,0 +1,10 @@
+exclude_dirs:
+  - venv
+  - backend/triage_service/models
+  - backend/tests
+  - frontend
+skips:
+  - B101
+severity: LOW
+confidence: MEDIUM
+

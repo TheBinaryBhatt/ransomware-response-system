@@ -2,7 +2,7 @@ export interface Incident {
   id: string;
   siem_alert_id: string;
   source: string;
-  raw_data: any;
+  raw_data: Record<string, unknown> | null;
   timestamp: string;
   decision?: string;
   confidence?: number;

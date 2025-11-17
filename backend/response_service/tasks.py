@@ -11,15 +11,33 @@ from .integrations.pfsense_client import pfsense_client
 from .integrations.abuseipdb_client import abuseipdb_client
 from .integrations.malwarebazaar_client import malwarebazaar_client
 from audit_service.tasks import log_action
+import pika
+import json
+from core.rabbitmq_utils import publish_event
+import os
+from core.config import settings
 
 logger = logging.getLogger(__name__)
+RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'rabbitmq')
 
 
 @shared_task(bind=True, default_retry_delay=30, max_retries=3)
 def quarantine_host(self, incident_id: str, agent_id: str):
     db: Session = next(get_db())
     incident = db.query(ResponseIncident).filter(ResponseIncident.id == incident_id).first()
+
     try:
+        if not settings.is_integration_enabled("wazuh"):
+            logger.info("Wazuh integration disabled; skipping quarantine action")
+            if incident:
+                actions = incident.actions_taken or []
+                actions.append("quarantine_host_skipped")
+                incident.actions_taken = actions
+                incident.response_status = "quarantine_skipped"
+                incident.updated_at = datetime.utcnow()
+                db.commit()
+            return {"incident_id": incident_id, "agent_id": agent_id, "skipped": True}
+
         async def run_quarantine():
             async with wazuh_client:
                 return await wazuh_client.quarantine_agent(agent_id)
@@ -34,7 +52,15 @@ def quarantine_host(self, incident_id: str, agent_id: str):
         incident.updated_at = datetime.utcnow()
         db.commit()
 
+        # Publish event notifying quarantine completion
+        publish_event(
+            'response.quarantine_host.completed',
+            {'incident_id': incident_id, 'agent_id': agent_id, 'result': result},
+            rabbitmq_host=RABBITMQ_HOST
+        )
+
         return {"incident_id": incident_id, "agent_id": agent_id}
+
     except Exception as exc:
         logger.error(f"Failed to quarantine host {agent_id}: {exc}")
         if incident:
@@ -42,11 +68,13 @@ def quarantine_host(self, incident_id: str, agent_id: str):
             incident.error_message = str(exc)
             incident.updated_at = datetime.utcnow()
             db.commit()
+
         try:
             raise self.retry(exc=exc)
         except self.MaxRetriesExceededError:
             raise Reject(exc, requeue=False)
 
+        
 
 @shared_task(bind=True, default_retry_delay=30, max_retries=3)
 def block_ip(self, context: dict):
@@ -56,6 +84,20 @@ def block_ip(self, context: dict):
     ip = incident.raw_data.get("source_ip")
 
     try:
+        if not settings.is_integration_enabled("pfsense"):
+            logger.info("pfSense integration disabled; skipping block_ip action")
+            if incident:
+                actions = incident.actions_taken or []
+                actions.append("block_ip_skipped")
+                incident.actions_taken = actions
+                incident.response_status = "block_ip_skipped"
+                incident.updated_at = datetime.utcnow()
+                db.commit()
+            context = dict(context)
+            context["ip"] = ip
+            context["block_ip_skipped"] = True
+            return context
+
         async def run_block():
             async with pfsense_client:
                 return await pfsense_client.block_ip(ip)
@@ -69,8 +111,13 @@ def block_ip(self, context: dict):
         incident.response_status = "blocked_ip"
         incident.updated_at = datetime.utcnow()
         db.commit()
-
-        return {"incident_id": incident_id, "ip": ip}
+        publish_event(
+            'response.block_ip.completed',
+            {'incident_id': incident_id, 'ip': ip}
+        )
+        context = dict(context)
+        context["ip"] = ip
+        return context
     except Exception as exc:
         logger.error(f"Failed to block IP {ip}: {exc}")
         if incident:
@@ -91,22 +138,35 @@ def enrich_threat_intel(context: dict):
     incident = db.query(ResponseIncident).filter(ResponseIncident.id == incident_id).first()
     intel = {}
 
+    if not settings.is_integration_enabled("abuseipdb") and not settings.is_integration_enabled("malwarebazaar"):
+        logger.info("Threat intel integrations disabled; skipping enrichment")
+        incident.threat_intel = {}
+        incident.updated_at = datetime.utcnow()
+        db.commit()
+        context = dict(context)
+        context["intel"] = {}
+        context["escalate"] = False
+        return context
+
     async def gather_intel():
         intel_data = {}
         ip = incident.raw_data.get("source_ip")
         file_hash = incident.raw_data.get("file_hash")
 
-        if ip:
+        if ip and settings.is_integration_enabled("abuseipdb"):
             try:
-                async with abuseipdb_client:
-                    abuse_data = await abuseipdb_client.check_ip(ip)
-                    intel_data["abuseipdb"] = abuse_data
-                    if abuse_data.get("confidence", 0) > 80:
-                        intel_data["high_risk_ip"] = True
+                if not abuseipdb_client.is_configured():
+                    logger.warning("AbuseIPDB client not configured; skipping IP enrichment")
+                else:
+                    async with abuseipdb_client:
+                        abuse_data = await abuseipdb_client.check_ip(ip)
+                        intel_data["abuseipdb"] = abuse_data
+                        if abuse_data.get("confidence", 0) > 80:
+                            intel_data["high_risk_ip"] = True
             except Exception as e:
                 logger.error(f"AbuseIPDB query failed for {ip}: {e}")
 
-        if file_hash:
+        if file_hash and settings.is_integration_enabled("malwarebazaar"):
             try:
                 async with malwarebazaar_client:
                     mb_data = await malwarebazaar_client.query_hash(file_hash)
@@ -182,6 +242,16 @@ def finalize_response(context: dict):
         details={"actions": incident.actions_taken, "threat_intel": intel},
     )
 
+    publish_event(
+        "response.workflow.completed",
+        {
+            "incident_id": incident_id,
+            "actions": incident.actions_taken,
+            "threat_intel": intel,
+            "status": incident.response_status,
+        },
+    )
+
     logger.info(f"Finalized response for incident {incident_id}")
     return {"incident_id": incident_id}
 
@@ -193,6 +263,10 @@ def trigger_full_response(incident_id: str, agent_id: str):
         enrich_threat_intel.s(),
         conditional_escalation.s(),
         finalize_response.s(),
+    )
+    publish_event(
+        "response.workflow.started",
+        {"incident_id": incident_id, "agent_id": agent_id},
     )
     result = workflow.apply_async()
     logger.info(f"Triggered full response workflow for incident {incident_id} with task id {result.id}")

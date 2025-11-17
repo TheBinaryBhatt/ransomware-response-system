@@ -1,15 +1,18 @@
 import React, { useState } from "react";
 
+type AbuseIpdbResult = Record<string, unknown>;
+type MalwareBazaarResult = Record<string, unknown>;
+
 const ThreatIntel: React.FC = () => {
   // AbuseIPDB states
   const [ipInput, setIpInput] = useState("");
-  const [ipResult, setIpResult] = useState<any>(null);
+  const [ipResult, setIpResult] = useState<AbuseIpdbResult | null>(null);
   const [ipLoading, setIpLoading] = useState(false);
   const [ipError, setIpError] = useState<string | null>(null);
 
   // MalwareBazaar states
   const [hashInput, setHashInput] = useState("");
-  const [hashResult, setHashResult] = useState<any>(null);
+  const [hashResult, setHashResult] = useState<MalwareBazaarResult | null>(null);
   const [hashLoading, setHashLoading] = useState(false);
   const [hashError, setHashError] = useState<string | null>(null);
 
@@ -23,12 +26,18 @@ const ThreatIntel: React.FC = () => {
     setIpResult(null);
 
     try {
-      const resp = await fetch(`${API_BASE}/threatintel/abuseipdb?ip=${encodeURIComponent(ipInput)}`);
+      const token = localStorage.getItem("rrs_access_token");
+      const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+      const resp = await fetch(
+        `${API_BASE}/threatintel/abuseipdb?ip=${encodeURIComponent(ipInput)}`,
+        { headers }
+      );
       if (!resp.ok) throw new Error(`API error: ${resp.statusText}`);
       const data = await resp.json();
       setIpResult(data.data);
-    } catch (err: any) {
-      setIpError(err.message || "Unknown error");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      setIpError(message);
     } finally {
       setIpLoading(false);
     }
@@ -42,29 +51,48 @@ const ThreatIntel: React.FC = () => {
     setHashResult(null);
 
     try {
-      const resp = await fetch(`${API_BASE}/threatintel/malwarebazaar?hash=${encodeURIComponent(hashInput)}`);
+      const token = localStorage.getItem("rrs_access_token");
+      const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+      const resp = await fetch(
+        `${API_BASE}/threatintel/malwarebazaar?hash=${encodeURIComponent(hashInput)}`,
+        { headers }
+      );
       if (!resp.ok) throw new Error(`API error: ${resp.statusText}`);
       const data = await resp.json();
       setHashResult(data.data);
-    } catch (err: any) {
-      setHashError(err.message || "Unknown error");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      setHashError(message);
     } finally {
       setHashLoading(false);
     }
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-12">
-      <h1 className="text-3xl font-bold mb-6">Manual Threat Intelligence Lookup</h1>
+    <div className="mx-auto max-w-5xl px-6 py-10 space-y-10">
+      <header className="rounded-2xl border border-indigo-500/30 bg-indigo-500/10 p-8 shadow-2xl shadow-indigo-900/30">
+        <p className="text-xs uppercase tracking-[0.3em] text-indigo-200">
+          Threat Intelligence Workbench
+        </p>
+        <h1 className="mt-3 text-3xl font-semibold text-slate-50">
+          Manual Enrichment & Adversary Reconnaissance
+        </h1>
+        <p className="mt-2 max-w-3xl text-sm text-slate-200/70">
+          Validate suspicious indicators against AbuseIPDB and MalwareBazaar. Toggle integrations via
+          environment variables to demonstrate graceful degradation.
+        </p>
+      </header>
 
-      {/* AbuseIPDB Section */}
-      <section className="bg-white p-6 rounded shadow">
-        <h2 className="text-xl font-semibold mb-4">AbuseIPDB IP Lookup</h2>
-        <form onSubmit={handleIpLookup} className="flex space-x-4 items-center">
+      <section className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-6 shadow-xl shadow-slate-950/40">
+        <h2 className="text-xl font-semibold text-slate-50">AbuseIPDB IP Lookup</h2>
+        <p className="mt-1 text-xs text-slate-400">
+          Submit an IP address to retrieve reputation data and confidence scores.
+        </p>
+        <form onSubmit={handleIpLookup} className="mt-4 flex flex-col gap-4 md:flex-row">
           <input
             type="text"
             placeholder="Enter IPv4 or IPv6 address"
-            className="flex-grow border rounded px-4 py-2 focus:ring-2 focus:ring-blue-500"
+            className="flex-grow rounded-lg border border-slate-700/70 bg-slate-950/60 px-4 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/40"
             value={ipInput}
             onChange={(e) => setIpInput(e.target.value)}
             required
@@ -72,31 +100,37 @@ const ThreatIntel: React.FC = () => {
           <button
             type="submit"
             disabled={ipLoading}
-            className={`bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50`}
+            className="rounded-lg border border-indigo-500/40 bg-indigo-500/20 px-4 py-2 text-sm font-semibold text-indigo-100 transition hover:bg-indigo-500/30 disabled:opacity-50"
           >
-            {ipLoading ? "Looking up..." : "Lookup"}
+            {ipLoading ? "Looking up..." : "Run Lookup"}
           </button>
         </form>
 
-        {/* Result */}
-        <div className="mt-6">
-          {ipError && <p className="text-red-600">Error: {ipError}</p>}
+        <div className="mt-6 rounded-lg border border-slate-800/60 bg-slate-950/40 p-4 text-sm">
+          {ipError && <p className="text-rose-400">Error: {ipError}</p>}
           {ipResult && (
-            <pre className="overflow-auto bg-gray-100 p-4 rounded text-sm">
+            <pre className="max-h-64 overflow-auto text-xs text-slate-200">
               {JSON.stringify(ipResult, null, 2)}
             </pre>
+          )}
+          {!ipError && !ipResult && (
+            <p className="text-xs text-slate-400">
+              Results will appear here. AbuseIPDB integration requires `ABUSEIPDB_API_KEY` to be configured.
+            </p>
           )}
         </div>
       </section>
 
-      {/* MalwareBazaar Section */}
-      <section className="bg-white p-6 rounded shadow">
-        <h2 className="text-xl font-semibold mb-4">MalwareBazaar Hash Lookup</h2>
-        <form onSubmit={handleHashLookup} className="flex space-x-4 items-center">
+      <section className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-6 shadow-xl shadow-slate-950/40">
+        <h2 className="text-xl font-semibold text-slate-50">MalwareBazaar Hash Lookup</h2>
+        <p className="mt-1 text-xs text-slate-400">
+          Query malware artefacts by MD5/SHA1/SHA256 hash to retrieve sandbox metadata.
+        </p>
+        <form onSubmit={handleHashLookup} className="mt-4 flex flex-col gap-4 md:flex-row">
           <input
             type="text"
             placeholder="Enter file hash (MD5/SHA1/SHA256)"
-            className="flex-grow border rounded px-4 py-2 focus:ring-2 focus:ring-blue-500"
+            className="flex-grow rounded-lg border border-slate-700/70 bg-slate-950/60 px-4 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/40"
             value={hashInput}
             onChange={(e) => setHashInput(e.target.value)}
             required
@@ -104,19 +138,23 @@ const ThreatIntel: React.FC = () => {
           <button
             type="submit"
             disabled={hashLoading}
-            className={`bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50`}
+            className="rounded-lg border border-indigo-500/40 bg-indigo-500/20 px-4 py-2 text-sm font-semibold text-indigo-100 transition hover:bg-indigo-500/30 disabled:opacity-50"
           >
             {hashLoading ? "Looking up..." : "Lookup"}
           </button>
         </form>
 
-        {/* Result */}
-        <div className="mt-6">
-          {hashError && <p className="text-red-600">Error: {hashError}</p>}
+        <div className="mt-6 rounded-lg border border-slate-800/60 bg-slate-950/40 p-4 text-sm">
+          {hashError && <p className="text-rose-400">Error: {hashError}</p>}
           {hashResult && (
-            <pre className="overflow-auto bg-gray-100 p-4 rounded text-sm">
+            <pre className="max-h-64 overflow-auto text-xs text-slate-200">
               {JSON.stringify(hashResult, null, 2)}
             </pre>
+          )}
+          {!hashError && !hashResult && (
+            <p className="text-xs text-slate-400">
+              Provide a hash to retrieve MalwareBazaar intelligence. Integration is optional but enabled by default.
+            </p>
           )}
         </div>
       </section>

@@ -1,0 +1,29 @@
+# Copy this file to config/integrations.yaml and tweak per environment.
+enabled_integrations:
+  - wazuh
+  - pfsense
+  - abuseipdb
+  - malwarebazaar
+
+integrations:
+  wazuh:
+    api_url: https://wazuh.local:55000
+    username: soc_automation
+    password: supersecret
+  pfsense:
+    api_url: https://pfsense.local
+    api_token: your_token_here
+  abuseipdb:
+    api_key: your_abuseipdb_key
+  malwarebazaar:
+    api_key: optional_mb_key
+
+cloud:
+  region: us-east-1
+  replica_count:
+    gateway: 2
+    ingestion_service: 2
+    triage_service: 2
+    response_service: 1
+    audit_service: 1
+

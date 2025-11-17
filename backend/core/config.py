@@ -1,25 +1,65 @@
-from pydantic_settings import BaseSettings
+from pathlib import Path
+from typing import Optional, List, Any, Dict
+
+import yaml
 from pydantic import AnyUrl, PostgresDsn, Field
+from pydantic_settings import BaseSettings
+
+
+def _load_yaml(path: Optional[str]) -> Dict[str, Any]:
+    if not path:
+        return {}
+    file_path = Path(path)
+    if not file_path.exists():
+        return {}
+    try:
+        with file_path.open("r", encoding="utf-8") as handle:
+            return yaml.safe_load(handle) or {}
+    except Exception:
+        return {}
+
 
 class Settings(BaseSettings):
     # API Gateway
-    host: str = "0.0.0.0"
+    host: str = "0.0.0.0"  # nosec B104 - required for container networking
     port: int = 8000
+
+    # Service identification
+    service_name: Optional[str] = None
 
     # Database URLs (one per service)
     ingestion_db_url: PostgresDsn
     triage_db_url: PostgresDsn
     response_db_url: PostgresDsn
     audit_db_url: PostgresDsn
+    
+    # General database URL (fallback)
+    database_url: Optional[PostgresDsn] = None
+    
+    # PostgreSQL credentials (for container setup)
+    postgres_user: str = "postgres"
+    postgres_password: str = "postgres"
+    postgres_db: str = "ransomware_db"
 
     # Redis
-    redis_url: str = "redis://localhost:6379"
+    redis_url: str = "redis://redis:6379"
 
     # JWT Secret Key
     secret_key: str = Field(..., min_length=32)
 
-    # External API Keys
-    abuseipdb_api_key: str | None = None
+    # External API Keys / Integrations
+    abuseipdb_api_key: Optional[str] = None
+    malwarebazaar_api_key: Optional[str] = None
+    wazuh_api_url: AnyUrl = "https://localhost:55000"
+    wazuh_username: str = "wazuh_user"
+    wazuh_password: str = "wazuh_pass"
+    pfsense_api_url: AnyUrl = "https://pfsense.example.com"
+    pfsense_api_token: Optional[str] = None
+
+    enabled_integrations: List[str] = Field(
+        default_factory=lambda: ["wazuh", "pfsense", "abuseipdb", "malwarebazaar"]
+    )
+    auto_response_enabled: bool = True
 
     # CORS Origins for Frontend
     cors_origins: list[str] = ["http://localhost:3000"]
@@ -27,7 +67,45 @@ class Settings(BaseSettings):
     # Triage Service URL (for ingestion → triage forwarding)
     triage_service_url: AnyUrl = "http://triage_service:8002/api/v1/incidents"
 
+    response_service_url: AnyUrl = "http://response_service:8003/api/v1/incidents"
+
+    integration_config_path: Optional[str] = "config/integrations.yaml"
+
+    def model_post_init(self, __context: Any) -> None:
+        overrides = _load_yaml(self.integration_config_path)
+        if not overrides:
+            return
+
+        enabled = overrides.get("enabled_integrations")
+        if isinstance(enabled, list) and enabled:
+            self.enabled_integrations = enabled
+
+        integrations = overrides.get("integrations", {})
+        wazuh_cfg = integrations.get("wazuh", {})
+        if wazuh_cfg:
+            self.wazuh_api_url = wazuh_cfg.get("api_url", self.wazuh_api_url)
+            self.wazuh_username = wazuh_cfg.get("username", self.wazuh_username)
+            self.wazuh_password = wazuh_cfg.get("password", self.wazuh_password)
+
+        pfsense_cfg = integrations.get("pfsense", {})
+        if pfsense_cfg:
+            self.pfsense_api_url = pfsense_cfg.get("api_url", self.pfsense_api_url)
+            self.pfsense_api_token = pfsense_cfg.get("api_token", self.pfsense_api_token)
+
+        abuse_cfg = integrations.get("abuseipdb", {})
+        if abuse_cfg:
+            self.abuseipdb_api_key = abuse_cfg.get("api_key", self.abuseipdb_api_key)
+
+        mb_cfg = integrations.get("malwarebazaar", {})
+        if mb_cfg:
+            self.malwarebazaar_api_key = mb_cfg.get("api_key", self.malwarebazaar_api_key)
+
     class Config:
         env_file = ".env"
+        extra = "allow"  # Allow extra environment variables
+
+    def is_integration_enabled(self, name: str) -> bool:
+        return name in self.enabled_integrations
+
 
 settings = Settings()

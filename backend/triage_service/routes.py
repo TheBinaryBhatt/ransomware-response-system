@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 
 from core.database import get_db
 from .models import TriageIncident
+from .local_ai.agent import triage_agent
 
 logging.basicConfig(level=logging.INFO)
 router = APIRouter()
@@ -43,6 +44,48 @@ async def create_incident_from_ingestion(payload: dict, db: AsyncSession = Depen
     return {"status": "success", "incident_id": str(incident.id)}
 
 # -------------------
+# POST: AI Analysis Endpoint (NEW!)
+# -------------------
+@router.post("/analyze")
+async def ai_analyze_incident(payload: dict, db: AsyncSession = Depends(get_db)):
+    """
+    AI-powered incident analysis endpoint
+    """
+    incident_data = payload.get("incident", {})
+    incident_id = payload.get("incident_id")
+    
+    logging.info(f"AI analysis requested for incident: {incident_id}")
+    
+    try:
+        # Run AI analysis
+        analysis_result = await triage_agent.analyze_incident(incident_data)
+        
+        # If incident_id provided, update the database
+        if incident_id:
+            result = await db.execute(select(TriageIncident).where(TriageIncident.id == incident_id))
+            incident = result.scalar_one_or_none()
+            
+            if incident:
+                # Update incident with AI analysis
+                incident.decision = analysis_result.get("decision", "escalate_human")
+                incident.confidence = analysis_result.get("confidence", 0.5)
+                incident.reasoning = analysis_result.get("reasoning", "AI analysis completed")
+                incident.status = "triaged"
+                
+                await db.commit()
+                logging.info(f"Updated incident {incident_id} with AI analysis")
+        
+        return {
+            "status": "success",
+            "incident_id": incident_id,
+            "analysis": analysis_result
+        }
+        
+    except Exception as e:
+        logging.error(f"AI analysis failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"AI analysis failed: {str(e)}")
+
+# -------------------
 # GET: All incidents
 # -------------------
 @router.get("/incidents")
@@ -63,15 +106,28 @@ async def triage_incident(incident_id: str, db: AsyncSession = Depends(get_db)):
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
 
-    # Placeholder AI logic
-    incident.decision = "confirmed_ransomware"
-    incident.confidence = 0.95
-    incident.reasoning = "AI analysis detected ransomware patterns"
-
-    await db.commit()
-    await db.refresh(incident)
-
-    return {"status": "success", "incident": incident}
+    # Use AI agent for analysis
+    try:
+        analysis_result = await triage_agent.analyze_incident(incident.raw_data)
+        
+        # Update incident with AI analysis
+        incident.decision = analysis_result.get("decision", "escalate_human")
+        incident.confidence = analysis_result.get("confidence", 0.5)
+        incident.reasoning = analysis_result.get("reasoning", "AI analysis completed")
+        incident.status = "triaged"
+        
+        await db.commit()
+        await db.refresh(incident)
+        
+        return {
+            "status": "success", 
+            "incident": incident,
+            "ai_analysis": analysis_result
+        }
+        
+    except Exception as e:
+        logging.error(f"Triage failed for incident {incident_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Triage failed: {str(e)}")
 
 # -------------------
 # GET: Stats for dashboard

@@ -1,0 +1,20 @@
+# Global Ruff configuration for backend and shared Python packages
+line-length = 100
+target-version = "py311"
+extend-exclude = [
+    "venv",
+    "backend/triage_service/models"
+]
+
+[lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E203", "E501"]
+
+[lint.per-file-ignores]
+"backend/triage_service/local_ai/*.py" = ["E501"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+

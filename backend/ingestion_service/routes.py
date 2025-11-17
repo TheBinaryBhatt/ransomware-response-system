@@ -5,6 +5,7 @@ from core.database import get_db
 from .models import IngestionIncident
 import uuid
 from .tasks import forward_to_triage
+from core.rabbitmq_utils import publish_event
 
 router = APIRouter()
 
@@ -28,8 +29,15 @@ async def handle_siem_webhook(alert_data: dict, background_tasks: BackgroundTask
         await db.commit()
         await db.refresh(incident)
 
-        # Forward incident to triage service in background
-        background_tasks.add_task(forward_to_triage, incident)
+        # Publish event for downstream consumers
+        event_body = {
+            "incident_id": str(incident.id),
+            "raw_data": incident.raw_data
+        }
+        publish_event("incident.received", event_body)
+
+        # Optional: keep direct forward for compatibility
+        await forward_to_triage(incident)
 
         return {"status": "success", "incident_id": str(incident.id)}
 

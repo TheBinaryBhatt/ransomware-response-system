@@ -1,5 +1,5 @@
 import React from "react";
-import { Incident } from "../../types/Incident";
+import type { Incident } from "../../types/Incident";
 import {
   LineChart,
   Line,
@@ -32,13 +32,15 @@ const IncidentTrends: React.FC<IncidentTrendsProps> = ({ incidents }) => {
 
   // Count by severity
   const severityCount = safeIncidents.reduce((acc, incident) => {
-    acc[incident.severity!] = (acc[incident.severity!] || 0) + 1;
+    const severity = incident.severity ?? "UNKNOWN";
+    acc[severity] = (acc[severity] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
 
   // Count by status
   const statusCount = safeIncidents.reduce((acc, incident) => {
-    acc[incident.status!] = (acc[incident.status!] || 0) + 1;
+    const status = incident.status ?? "UNKNOWN";
+    acc[status] = (acc[status] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
 

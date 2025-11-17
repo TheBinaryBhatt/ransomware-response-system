@@ -4,7 +4,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 import uuid
 from sqlalchemy.types import TypeDecorator, CHAR
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-from sqlalchemy import String
+from sqlalchemy import String, text
 from sqlalchemy.engine import Dialect
 
 class GUID(TypeDecorator):
@@ -38,35 +38,54 @@ class GUID(TypeDecorator):
             return value
         return uuid.UUID(value) if isinstance(value, str) else value
 
+# Use a simple, direct database URL
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://admin:supersecretpassword@postgres:5432/ransomware_db")
 
-# Detect service name from environment, fallback to "ingestion"
-service_name = os.getenv("SERVICE_NAME", "ingestion").upper()
-env_var = f"{service_name}_DB_URL"
+print(f"[DB] Using URL: {DATABASE_URL.replace('supersecretpassword', '***')}")
 
-# Pick service-specific DB URL, fallback to DATABASE_URL
-DATABASE_URL = os.getenv(env_var, os.getenv("DATABASE_URL"))
+# Create engine and session
+engine = create_async_engine(
+    DATABASE_URL,
+    echo=True,
+    future=True,
+    pool_pre_ping=True  # Add connection health checks
+)
 
-if not DATABASE_URL:
-    raise ValueError(f"Database URL not set for {service_name} service.")
+AsyncSessionLocal = sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False
+)
 
-engine = create_async_engine(DATABASE_URL, future=True, echo=True)
-AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 Base = declarative_base()
 
+# Dependency to get database session
 async def get_db():
     async with AsyncSessionLocal() as session:
-        yield session
+        try:
+            yield session
+        finally:
+            await session.close()
+
+# Test database connection - FIXED: Use text() for raw SQL
+async def test_connection():
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+            await session.commit()
+        print("[DB] Connection successful")
+        return True
+    except Exception as e:
+        print(f"[DB] Connection failed: {e}")
+        return False
 
 # Base model shared by all services
-from sqlalchemy import Column, String, DateTime, JSON
-from sqlalchemy.dialects.postgresql import UUID
-import uuid
+from sqlalchemy import Column, String, DateTime, JSON, Boolean, Text
 from datetime import datetime
 
 class IncidentBase(Base):
     __abstract__ = True
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
-
     siem_alert_id = Column(String, nullable=False)
     source = Column(String, default="wazuh")
     raw_data = Column(JSON)
@@ -74,13 +93,11 @@ class IncidentBase(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-# Add this after the IncidentBase class definition
-# Create a function to initialize models for each service
+# Initialize models
 async def init_models():
-    async with engine.begin() as conn:
-        # Create tables for the current service's models
-        # Each service should import this function and call it on startup
-        from backend.core import pathhelper
-        service_models = pathhelper.get_service_models()
-        if service_models:
+    try:
+        async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+        print("✅ Database tables created/verified")
+    except Exception as e:
+        print(f"❌ Error creating tables: {e}")

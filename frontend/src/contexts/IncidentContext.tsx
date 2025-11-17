@@ -1,7 +1,9 @@
-import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
-import { useWebSocket } from '../hooks/useWebSocket';
-import { api } from '../services/api';
-import { Incident } from '../types/Incident';
+import type { ReactNode } from "react";
+import React, { createContext, useContext, useReducer, useEffect, useCallback } from "react";
+import { useWebSocket } from "../hooks/useWebSocket";
+import { api } from "../services/api";
+import type { Incident } from "../types/Incident";
+import { AuthContext } from "./AuthContext";
 
 interface IncidentState {
   incidents: Incident[];
@@ -73,30 +75,38 @@ export const useIncidents = (): IncidentContextType => {
 
 export const IncidentProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [state, dispatch] = useReducer(incidentReducer, initialState);
-  const { onEvent } = useWebSocket('http://localhost:8000');
+  const { onEvent } = useWebSocket("http://localhost:8000");
+  const { isAuthenticated } = useContext(AuthContext);
 
-  const refreshIncidents = async () => {
-    try {
-      dispatch({ type: 'SET_LOADING', payload: true });
-      const incidents = await api.getIncidents();
-      dispatch({ type: 'SET_INCIDENTS', payload: incidents });
-    } catch (error) {
-      console.error('Failed to fetch incidents:', error);
-    } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
+  const refreshIncidents = useCallback(async () => {
+    if (!isAuthenticated) {
+      dispatch({ type: "SET_INCIDENTS", payload: [] });
+      return;
     }
-  };
+    try {
+      dispatch({ type: "SET_LOADING", payload: true });
+      const incidents = await api.getIncidents();
+      dispatch({ type: "SET_INCIDENTS", payload: incidents });
+    } catch (error) {
+      console.error("Failed to fetch incidents:", error);
+    } finally {
+      dispatch({ type: "SET_LOADING", payload: false });
+    }
+  }, [isAuthenticated]);
 
   useEffect(() => {
-    refreshIncidents();
-  }, []);
+    void refreshIncidents();
+  }, [refreshIncidents]);
 
   useEffect(() => {
-    const cleanup = onEvent('incident_update', (incident: Incident) => {
-      dispatch({ type: 'ADD_INCIDENT', payload: incident });
+    if (!isAuthenticated) {
+      return;
+    }
+    const cleanup = onEvent("incident_update", (incident: Incident) => {
+      dispatch({ type: "ADD_INCIDENT", payload: incident });
     });
     return cleanup;
-  }, [onEvent]);
+  }, [onEvent, isAuthenticated]);
 
   return (
     <IncidentContext.Provider value={{ state, dispatch, refreshIncidents }}>
