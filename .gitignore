@@ -75,3 +75,8 @@ npm-debug.log*
 
 # Jupyter Notebook
 .ipynb_checkpoints
+
+# Model files
+backend/triage_service/models/Hermes-2-Pro-Mistral-7B.gguf
+backend/triage_service/models/Hermes-2-Pro-Mistral-7B.Q8_0.gguf
+
