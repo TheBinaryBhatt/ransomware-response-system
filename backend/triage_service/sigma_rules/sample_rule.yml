@@ -1,0 +1,15 @@
+﻿title: Sample Suspicious Process
+id: 00000000-0000-0000-0000-000000000001
+description: "Example Sigma rule used as a placeholder to avoid missing-folder errors."
+status: experimental
+author: rrs-placeholder
+logsource:
+  product: windows
+detection:
+  selection:
+    EventID: 4688
+    CommandLine|contains: "ransom"
+  condition: selection
+falsepositives:
+  - legitimate admin scripts
+level: high

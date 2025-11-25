@@ -1,81 +1,173 @@
-import React, { useState, useContext } from "react";
-import { useNavigate } from "react-router-dom";
-import { AuthContext } from "../contexts/AuthContext";
+// src/pages/Login.tsx
+import React, { useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { Shield, LogIn, Eye, EyeOff } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 const Login: React.FC = () => {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [localError, setLocalError] = useState<string | null>(null);
-  const auth = useContext(AuthContext);
-  const navigate = useNavigate();
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const { login, isLoading, error } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLocalError(null);
-    try {
-      await auth.login(username, password);
-      navigate("/", { replace: true });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Authentication failed";
-      setLocalError(message);
-    }
+    await login(username, password);
   };
 
-  const error = localError || auth.error;
-
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 bg-[radial-gradient(circle_at_top,_rgba(79,70,229,0.3),_transparent_55%),radial-gradient(circle_at_bottom,_rgba(16,185,129,0.2),_transparent_55%)] px-6">
-      <div className="w-full max-w-md rounded-2xl border border-slate-800/70 bg-slate-900/80 p-8 shadow-2xl shadow-indigo-950/50 backdrop-blur">
-        <div className="mb-6 text-center">
-          <p className="text-xs uppercase tracking-[0.4em] text-indigo-300">Secure Access</p>
-          <h1 className="mt-2 text-2xl font-semibold text-slate-50">Ransomware Response Console</h1>
-          <p className="mt-2 text-xs text-slate-400">
-            Use your SOC credentials to access real-time incident orchestration.
+    <div className="min-h-screen bg-dark-primary flex items-center justify-center relative overflow-hidden">
+      {/* Animated Background Particles */}
+      <div className="absolute inset-0">
+        {[...Array(50)].map((_, i) => (
+          <motion.div
+            key={i}
+            className="absolute w-1 h-1 bg-teal-500/30 rounded-full"
+            initial={{
+              x: Math.random() * window.innerWidth,
+              y: Math.random() * window.innerHeight,
+            }}
+            animate={{
+              y: [null, -20, 0],
+              opacity: [0, 1, 0],
+            }}
+            transition={{
+              duration: Math.random() * 3 + 2,
+              repeat: Infinity,
+              delay: Math.random() * 2,
+            }}
+          />
+        ))}
+      </div>
+
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="relative z-10 bg-dark-surface rounded-2xl shadow-2xl p-8 w-full max-w-md border border-dark-secondary"
+      >
+        {/* Header */}
+        <div className="text-center mb-8">
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ delay: 0.2, type: "spring" }}
+            className="flex justify-center mb-4"
+          >
+            <div className="p-3 bg-gradient-to-br from-teal-500 to-teal-600 rounded-2xl">
+              <Shield className="w-8 h-8 text-white" />
+            </div>
+          </motion.div>
+          <h1 className="text-2xl font-bold text-cream mb-2">
+            Ransomware Response System
+          </h1>
+          <p className="text-gray-400 text-sm">
+            AI-Powered Cybersecurity Operations
           </p>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-5">
+
+        {/* Error Message */}
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 p-4 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400"
+          >
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-red-400 rounded-full animate-pulse"></div>
+              <span className="text-sm">{error}</span>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Login Form */}
+        <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label className="text-xs font-medium uppercase tracking-widest text-slate-400">
+            <label htmlFor="username" className="block text-sm font-medium text-gray-300 mb-2">
               Username
             </label>
             <input
+              id="username"
               type="text"
-              className="mt-1 block w-full rounded-lg border border-slate-700/60 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
+              className="w-full px-4 py-3 bg-dark-secondary border border-gray-600 rounded-lg 
+                       text-cream placeholder-gray-500 focus:outline-none focus:ring-2 
+                       focus:ring-teal-500 focus:border-transparent transition-all"
+              placeholder="Enter username"
               required
               autoFocus
             />
           </div>
+
           <div>
-            <label className="text-xs font-medium uppercase tracking-widest text-slate-400">
+            <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-2">
               Password
             </label>
-            <input
-              type="password"
-              className="mt-1 block w-full rounded-lg border border-slate-700/60 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+            <div className="relative">
+              <input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 bg-dark-secondary border border-gray-600 rounded-lg 
+                         text-cream placeholder-gray-500 focus:outline-none focus:ring-2 
+                         focus:ring-teal-500 focus:border-transparent transition-all pr-10"
+                placeholder="Enter password"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-cream transition-colors"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
-          {error && (
-            <p className="rounded border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
-              {error}
-            </p>
-          )}
-          <button
+
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
             type="submit"
-            disabled={auth.isLoading}
-            className="w-full rounded-lg border border-indigo-500/40 bg-indigo-500/20 px-4 py-2 text-sm font-semibold text-indigo-100 transition hover:bg-indigo-500/30 disabled:opacity-60"
+            disabled={isLoading}
+            className="w-full bg-gradient-to-r from-teal-500 to-teal-600 text-white py-3 
+                     rounded-lg font-semibold flex items-center justify-center gap-2
+                     hover:from-teal-600 hover:to-teal-700 transition-all shadow-lg
+                     disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {auth.isLoading ? "Authenticating..." : "Access Console"}
-          </button>
+            {isLoading ? (
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                Authenticating...
+              </div>
+            ) : (
+              <>
+                <LogIn className="w-5 h-5" />
+                Sign In
+              </>
+            )}
+          </motion.button>
         </form>
-        <div className="mt-6 text-center text-[11px] uppercase tracking-[0.3em] text-slate-500">
-          MITRE-aligned Ransomware Response | © {new Date().getFullYear()}
+
+        {/* Demo Credentials */}
+        <div className="mt-6 p-4 bg-teal-500/10 rounded-lg border border-teal-500/20">
+          <p className="text-sm text-teal-400 text-center">
+            <strong>Demo Credentials:</strong> admin / admin123
+          </p>
         </div>
-      </div>
+
+        <div className="mt-6 text-center">
+          <a href="#" className="text-sm text-teal-400 hover:text-teal-300 transition-colors">
+            Forgot your password?
+          </a>
+        </div>
+
+        <div className="mt-8 pt-6 border-t border-gray-700 text-center">
+          <p className="text-xs text-gray-500">
+            © 2024 Ransomware Response System. All rights reserved.
+          </p>
+        </div>
+      </motion.div>
     </div>
   );
 };

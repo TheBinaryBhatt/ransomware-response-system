@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List, Optional, Dict, Any
@@ -17,7 +17,7 @@ router = APIRouter()
 class AuditLogCreate(BaseModel):
     action: str
     target: Optional[str] = None
-    status: str
+    status: str = "info"
     details: Dict[Any, Any] = Field(default_factory=dict)
     actor: str = "system"
     resource_type: str = "system"
@@ -35,6 +35,7 @@ class AuditLogResponse(BaseModel):
     resource_type: str
     integrity_hash: str
 
+
 @router.get("/api/v1/logs", response_model=List[AuditLogResponse])
 async def get_audit_logs(db: AsyncSession = Depends(get_db)):
     """Get all audit logs."""
@@ -42,7 +43,7 @@ async def get_audit_logs(db: AsyncSession = Depends(get_db)):
         stmt = select(AuditLog).order_by(AuditLog.created_at.desc())
         result = await db.execute(stmt)
         audit_logs = result.scalars().all()
-        
+
         return [
             AuditLogResponse(
                 id=log.id,
@@ -62,7 +63,8 @@ async def get_audit_logs(db: AsyncSession = Depends(get_db)):
         logger.error(f"Error fetching audit logs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/api/v1/log", response_model=AuditLogResponse)
+
+@router.post("/api/v1/log", response_model=AuditLogResponse, status_code=status.HTTP_201_CREATED)
 async def create_audit_log(log_data: AuditLogCreate, db: AsyncSession = Depends(get_db)):
     """Create a new audit log."""
     try:
@@ -72,13 +74,13 @@ async def create_audit_log(log_data: AuditLogCreate, db: AsyncSession = Depends(
             target=log_data.target,
             resource_type=log_data.resource_type or "system",
             status=log_data.status,
-            details=log_data.details or {}
+            details=log_data.details or {},
         )
-        
+
         db.add(new_log)
         await db.commit()
         await db.refresh(new_log)
-        
+
         return AuditLogResponse(
             id=new_log.id,
             log_id=new_log.log_id,
@@ -96,17 +98,18 @@ async def create_audit_log(log_data: AuditLogCreate, db: AsyncSession = Depends(
         await db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/api/v1/logs/{log_id}")
+
+@router.get("/api/v1/logs/{log_id}", response_model=AuditLogResponse)
 async def get_audit_log(log_id: int, db: AsyncSession = Depends(get_db)):
     """Get a specific audit log by ID."""
     try:
         stmt = select(AuditLog).where(AuditLog.id == log_id)
         result = await db.execute(stmt)
         audit_log = result.scalar_one_or_none()
-        
+
         if not audit_log:
             raise HTTPException(status_code=404, detail="Audit log not found")
-        
+
         return AuditLogResponse(
             id=audit_log.id,
             log_id=audit_log.log_id,

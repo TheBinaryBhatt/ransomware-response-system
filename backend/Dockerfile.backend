@@ -1,0 +1,44 @@
+FROM python:3.11-slim-bookworm
+
+ENV PATH="/usr/local/bin:$PATH"
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+  gcc g++ build-essential cmake curl libssl-dev \
+  && rm -rf /var/lib/apt/lists/*
+
+# -----------------------------
+# Install Python dependencies
+# -----------------------------
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN pip install --no-cache-dir -r requirements.txt
+
+# -----------------------------
+# Install shared_lib FIRST (before other services)
+# -----------------------------
+COPY shared_lib /app/shared_lib
+WORKDIR /app/shared_lib
+RUN pip install -e .
+WORKDIR /app
+
+# -----------------------------
+# Copy backend services
+# -----------------------------
+COPY core/ ./core/
+COPY ingestion_service/ ./ingestion_service/
+COPY triage_service/ ./triage_service/
+COPY response_service/ ./response_service/
+COPY alerting_service/ ./alerting_service/
+COPY audit_service/ ./audit_service/
+COPY gateway/ ./gateway/
+
+RUN find . -type d -exec touch {}/__init__.py \;
+
+ENV PYTHONPATH="/app"
+
+EXPOSE 8000 8001 8002 8003 8004
+
+CMD ["python", "-m", "gateway.main"]

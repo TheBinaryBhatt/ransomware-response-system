@@ -1,7 +1,13 @@
+version: "3.9"
+
 services:
+
+  # ----------------------------------------
+  # DATABASES / MESSAGE QUEUES
+  # ----------------------------------------
   postgres:
     image: postgres:15-alpine
-    container_name: ransomware-response-system-postgres
+    container_name: ransomware-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
@@ -12,7 +18,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-ransomware_response}" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-ransomware_db}" ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -21,92 +27,93 @@ services:
       - app-network
 
   rabbitmq:
-    image: rabbitmq:3-management
-    container_name: rabbitmq
-    ports:
-      - "5672:5672" # AMQP port
-      - "15672:15672" # Management UI
+    image: rabbitmq:3.13-management
+    container_name: ransomware-rabbitmq
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
       test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
     networks:
       - app-network
 
   redis:
     image: redis:7-alpine
-    container_name: ransomware-response-system-redis
+    container_name: ransomware-redis
     ports:
       - "6379:6379"
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 5s
+      timeout: 3s
+      retries: 10
       start_period: 5s
     networks:
       - app-network
 
-  # Celery Worker for Background Tasks
-  celery_worker:
+  # ----------------------------------------
+  # BACKEND BASE IMAGE (BUILT ONCE)
+  # ----------------------------------------
+  backend_base:
     build:
       context: ./backend
-    image: ransomware-response-system-celery
-    container_name: ransomware-response-system-celery
-    command: [ "celery", "-A", "core.celery_app:celery_app", "worker", "--loglevel=info", "--concurrency=2" ]
-    working_dir: /app
-    volumes:
-      - ./backend:/app
+      dockerfile: Dockerfile.backend
+    image: backend_base:latest
+    container_name: backend-base-build
     environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - SECRET_KEY=${SECRET_KEY}
-      - REDIS_URL=${REDIS_URL}
+      - PYTHONUNBUFFERED=1
+    networks:
+      - app-network
+
+  # ----------------------------------------
+  # BACKEND SERVICES - REUSE SAME IMAGE
+  # ----------------------------------------
+
+  celery_worker:
+    image: backend_base:latest
+    container_name: ransomware-celery
+    command: [ "celery", "-A", "core.celery_app:celery_app", "worker", "--loglevel=info", "--concurrency=2" ]
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://admin:supersecretpassword@postgres:5432/ransomware_db}
+      - SECRET_KEY=${SECRET_KEY:-dev-super-secret-key-please-change-1234567890}
+      - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - PYTHONPATH=/app
-    security_opt:
-      - no-new-privileges:true
+      - PYTHONPATH=/app:/app/shared_lib/src
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     restart: unless-stopped
     networks:
       - app-network
 
   gateway:
-    build:
-      context: ./backend
-    image: ransomware-response-system-gateway
-    container_name: ransomware-response-system-gateway
+    image: backend_base:latest
+    container_name: ransomware-gateway
     command: [ "python", "-m", "gateway.main" ]
-    working_dir: /app
-    volumes:
-      - ./backend:/app
-    environment:
-      - SERVICE_NAME=GATEWAY
-      - DATABASE_URL=${DATABASE_URL}
-      - SECRET_KEY=${SECRET_KEY}
-      - REDIS_URL=${REDIS_URL}
-      - INGESTION_DB_URL=${INGESTION_DB_URL}
-      - TRIAGE_DB_URL=${TRIAGE_DB_URL}
-      - RESPONSE_DB_URL=${RESPONSE_DB_URL}
-      - AUDIT_DB_URL=${AUDIT_DB_URL}
-      - PYTHONPATH=/app
-    security_opt:
-      - no-new-privileges:true
     ports:
       - "8000:8000"
+    environment:
+      - SERVICE_NAME=GATEWAY
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://admin:supersecretpassword@postgres:5432/ransomware_db}
+      - SECRET_KEY=${SECRET_KEY:-dev-super-secret-key-please-change-1234567890}
+      - REDIS_URL=redis://redis:6379/0
+      - PYTHONPATH=/app:/app/shared_lib/src
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
     depends_on:
       postgres:
         condition: service_healthy
@@ -118,66 +125,47 @@ services:
         condition: service_started
       triage_service:
         condition: service_started
-    restart: on-failure
+    restart: unless-stopped
     networks:
       - app-network
 
   ingestion_service:
-    build:
-      context: ./backend
-    image: ransomware-response-system-ingestion
-    container_name: ransomware-response-system-ingestion
+    image: backend_base:latest
+    container_name: ransomware-ingestion
     command: [ "uvicorn", "ingestion_service.main:app", "--host", "0.0.0.0", "--port", "8001" ]
-    working_dir: /app
-    volumes:
-      - ./backend:/app
+    ports:
+      - "8001:8001"
     environment:
       - SERVICE_NAME=INGESTION
-      - INGESTION_DB_URL=${INGESTION_DB_URL}
-      - TRIAGE_DB_URL=${TRIAGE_DB_URL}
-      - RESPONSE_DB_URL=${RESPONSE_DB_URL}
-      - AUDIT_DB_URL=${AUDIT_DB_URL}
-      - DATABASE_URL=${DATABASE_URL}
-      - SECRET_KEY=${SECRET_KEY}
-      - REDIS_URL=${REDIS_URL}
-      - PYTHONPATH=/app
-    security_opt:
-      - no-new-privileges:true
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://admin:supersecretpassword@postgres:5432/ransomware_db}
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY:-dev-super-secret-key-please-change-1234567890}
+      - PYTHONPATH=/app:/app/shared_lib/src
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
       rabbitmq:
         condition: service_healthy
-    ports:
-      - "8001:8001"
-    restart: on-failure
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
     networks:
       - app-network
 
   triage_service:
-    build:
-      context: ./backend
-    image: ransomware-response-system-triage
-    container_name: ransomware-response-system-triage
+    image: backend_base:latest
+    container_name: ransomware-triage
     command: [ "uvicorn", "triage_service.main:app", "--host", "0.0.0.0", "--port", "8002" ]
-    working_dir: /app
-    volumes:
-      - ./backend:/app
-      - ./backend/triage_service/models:/app/triage_service/models
+    ports:
+      - "8002:8002"
     environment:
       - SERVICE_NAME=TRIAGE
-      - INGESTION_DB_URL=${INGESTION_DB_URL}
-      - TRIAGE_DB_URL=${TRIAGE_DB_URL}
-      - RESPONSE_DB_URL=${RESPONSE_DB_URL}
-      - AUDIT_DB_URL=${AUDIT_DB_URL}
-      - DATABASE_URL=${DATABASE_URL}
-      - SECRET_KEY=${SECRET_KEY}
-      - REDIS_URL=${REDIS_URL}
-      - PYTHONPATH=/app
-    security_opt:
-      - no-new-privileges:true
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://admin:supersecretpassword@postgres:5432/ransomware_db}
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY:-dev-super-secret-key-please-change-1234567890}
+      - PYTHONPATH=/app:/app/shared_lib/src
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
     depends_on:
       postgres:
         condition: service_healthy
@@ -185,34 +173,23 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-    ports:
-      - "8002:8002"
-    restart: on-failure
+    restart: unless-stopped
     networks:
       - app-network
 
   response_service:
-    build:
-      context: ./backend
-    image: ransomware-response-system-response
-    container_name: ransomware-response-system-response
+    image: backend_base:latest
+    container_name: ransomware-response
     command: [ "uvicorn", "response_service.main:app", "--host", "0.0.0.0", "--port", "8003" ]
-    working_dir: /app
-    volumes:
-      - ./backend:/app
+    ports:
+      - "8003:8003"
     environment:
       - SERVICE_NAME=RESPONSE
-      - INGESTION_DB_URL=${INGESTION_DB_URL}
-      - TRIAGE_DB_URL=${TRIAGE_DB_URL}
-      - RESPONSE_DB_URL=${RESPONSE_DB_URL}
-      - AUDIT_DB_URL=${AUDIT_DB_URL}
-      - DATABASE_URL=${DATABASE_URL}
-      - SECRET_KEY=${SECRET_KEY}
-      - REDIS_URL=${REDIS_URL}
-      - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY}
-      - PYTHONPATH=/app
-    security_opt:
-      - no-new-privileges:true
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://admin:supersecretpassword@postgres:5432/ransomware_db}
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY:-dev-super-secret-key-please-change-1234567890}
+      - PYTHONPATH=/app:/app/shared_lib/src
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
     depends_on:
       postgres:
         condition: service_healthy
@@ -220,68 +197,60 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-    ports:
-      - "8003:8003"
-    restart: on-failure
+    restart: unless-stopped
     networks:
       - app-network
 
   audit_service:
-    build:
-      context: ./backend
-    image: ransomware-response-system-audit
-    container_name: ransomware-response-system-audit
+    image: backend_base:latest
+    container_name: ransomware-audit
     command: [ "uvicorn", "audit_service.main:app", "--host", "0.0.0.0", "--port", "8004" ]
-    working_dir: /app
-    volumes:
-      - ./backend:/app
+    ports:
+      - "8004:8004"
     environment:
       - SERVICE_NAME=AUDIT
-      - INGESTION_DB_URL=${INGESTION_DB_URL}
-      - TRIAGE_DB_URL=${TRIAGE_DB_URL}
-      - RESPONSE_DB_URL=${RESPONSE_DB_URL}
-      - AUDIT_DB_URL=${AUDIT_DB_URL}
-      - DATABASE_URL=${DATABASE_URL}
-      - SECRET_KEY=${SECRET_KEY}
-      - REDIS_URL=${REDIS_URL}
-      - PYTHONPATH=/app
-    security_opt:
-      - no-new-privileges:true
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://admin:supersecretpassword@postgres:5432/ransomware_db}
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY:-dev-super-secret-key-please-change-1234567890}
+      - PYTHONPATH=/app:/app/shared_lib/src
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
     healthcheck:
       test: [ "CMD-SHELL", "curl -f http://localhost:8004/health || exit 1" ]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
-    ports:
-      - "8004:8004"
-    restart: on-failure
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
     networks:
       - app-network
 
+  # ----------------------------------------
+  # FRONTEND
+  # ----------------------------------------
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: ransomware-response-system-frontend
+    container_name: ransomware-frontend
     ports:
       - "3000:3000"
     environment:
       - REACT_APP_API_URL=http://localhost:8000
-    security_opt:
-      - no-new-privileges:true
     depends_on:
       - gateway
     networks:
       - app-network
 
+# ----------------------------------------
+# VOLUMES & NETWORKS
+# ----------------------------------------
 volumes:
   postgres_data:
   rabbitmq_data:

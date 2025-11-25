@@ -1,9 +1,13 @@
+# backend/core/config.py
 from pathlib import Path
 from typing import Optional, List, Any, Dict
 
 import yaml
 from pydantic import AnyUrl, PostgresDsn, Field
 from pydantic_settings import BaseSettings
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def _load_yaml(path: Optional[str]) -> Dict[str, Any]:
@@ -16,27 +20,29 @@ def _load_yaml(path: Optional[str]) -> Dict[str, Any]:
         with file_path.open("r", encoding="utf-8") as handle:
             return yaml.safe_load(handle) or {}
     except Exception:
+        logger.exception("Failed loading integration config YAML")
         return {}
 
 
 class Settings(BaseSettings):
-    # API Gateway
+    # API Gateway default bind (can be overridden per service)
     host: str = "0.0.0.0"  # nosec B104 - required for container networking
     port: int = 8000
 
-    # Service identification
+    # Service identification (optional)
     service_name: Optional[str] = None
 
-    # Database URLs (one per service)
-    ingestion_db_url: PostgresDsn
-    triage_db_url: PostgresDsn
-    response_db_url: PostgresDsn
-    audit_db_url: PostgresDsn
-    
-    # General database URL (fallback)
+    # Per-service database URLs (optional). If individual service URL is not provided
+    # services/consumers can fall back to `database_url`.
+    ingestion_db_url: Optional[PostgresDsn] = None
+    triage_db_url: Optional[PostgresDsn] = None
+    response_db_url: Optional[PostgresDsn] = None
+    audit_db_url: Optional[PostgresDsn] = None
+
+    # General database URL fallback
     database_url: Optional[PostgresDsn] = None
-    
-    # PostgreSQL credentials (for container setup)
+
+    # PostgreSQL container defaults (only used if you build URLs dynamically)
     postgres_user: str = "postgres"
     postgres_password: str = "postgres"
     postgres_db: str = "ransomware_db"
@@ -44,7 +50,7 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://redis:6379"
 
-    # JWT Secret Key
+    # JWT Secret Key - required
     secret_key: str = Field(..., min_length=32)
 
     # External API Keys / Integrations
@@ -62,16 +68,23 @@ class Settings(BaseSettings):
     auto_response_enabled: bool = True
 
     # CORS Origins for Frontend
-    cors_origins: list[str] = ["http://localhost:3000"]
+    cors_origins: List[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
-    # Triage Service URL (for ingestion → triage forwarding)
-    triage_service_url: AnyUrl = "http://triage_service:8002/api/v1/incidents"
-
-    response_service_url: AnyUrl = "http://response_service:8003/api/v1/incidents"
+    # Service URLs (optional, can be overridden via env)
+    triage_service_url: Optional[str] = None
+    response_service_url: Optional[str] = None
 
     integration_config_path: Optional[str] = "config/integrations.yaml"
 
+    class Config:
+        env_file = ".env"
+        extra = "allow"  # Allow extra environment variables
+
     def model_post_init(self, __context: Any) -> None:
+        """
+        Called after the settings model is initialised (pydantic v2).
+        Loads integration overrides from YAML (if present).
+        """
         overrides = _load_yaml(self.integration_config_path)
         if not overrides:
             return
@@ -100,12 +113,9 @@ class Settings(BaseSettings):
         if mb_cfg:
             self.malwarebazaar_api_key = mb_cfg.get("api_key", self.malwarebazaar_api_key)
 
-    class Config:
-        env_file = ".env"
-        extra = "allow"  # Allow extra environment variables
-
     def is_integration_enabled(self, name: str) -> bool:
-        return name in self.enabled_integrations
+        return name in (self.enabled_integrations or [])
 
 
+# Single global settings instance used by services
 settings = Settings()

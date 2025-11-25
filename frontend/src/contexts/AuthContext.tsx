@@ -8,9 +8,11 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
+  user?: { username: string };
 }
 
 const TOKEN_STORAGE_KEY = "rrs_access_token";
+const USERNAME_STORAGE_KEY = "rrs_username";
 const API_BASE_URL =
   process.env.REACT_APP_API_URL?.replace(/\/$/, "") || "http://localhost:8000/api/v1";
 const TOKEN_URL = `${API_BASE_URL}/token`;
@@ -26,6 +28,7 @@ export const AuthContext = createContext<AuthContextType>({
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_STORAGE_KEY));
+  const [username, setUsername] = useState<string | null>(() => localStorage.getItem(USERNAME_STORAGE_KEY));
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,7 +60,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       localStorage.setItem(TOKEN_STORAGE_KEY, accessToken);
+      localStorage.setItem(USERNAME_STORAGE_KEY, username);
       setToken(accessToken);
+      setUsername(username);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Login failed";
       setError(message);
@@ -69,7 +74,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_STORAGE_KEY);
+    localStorage.removeItem(USERNAME_STORAGE_KEY);
     setToken(null);
+    setUsername(null);
     setError(null);
   }, []);
 
@@ -80,10 +87,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       logout,
       isAuthenticated: Boolean(token),
       isLoading,
-      error
+      error,
+      user: username ? { username } : undefined
     }),
-    [token, login, logout, isLoading, error]
+    [token, login, logout, isLoading, error, username]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+};
+
+// Custom hook to use AuthContext
+export const useAuth = () => {
+  const context = React.useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 };

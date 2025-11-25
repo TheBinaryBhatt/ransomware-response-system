@@ -1,57 +1,38 @@
+// src/App.tsx
 import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider } from './contexts/AuthContext';
 import { IncidentProvider } from './contexts/IncidentContext';
-import { AuthProvider, AuthContext } from './contexts/AuthContext';
+import AppLayout from './components/Layout/AppLayout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import ThreatIntel from './pages/ThreatIntel';
 import WorkflowMonitor from './pages/WorkflowMonitor';
-import ErrorBoundary from './components/ErrorBoundary';
-import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
-import './index.css';
-// Wrapper to extract incidentId param and pass as prop to WorkflowMonitor
-import { useParams } from 'react-router-dom';
-import AppLayout from './components/Layout/AppLayout';
+import AuditLogs from './pages/AuditLogs';
+import Settings from './pages/Settings';
+import IncidentDetail from './pages/IncidentDetail';
 
-const PrivateShell: React.FC = () => {
-  const auth = React.useContext(AuthContext);
-  if (!auth.isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
+const App: React.FC = () => {
   return (
-    <AppLayout>
-      <Outlet />
-    </AppLayout>
-  );
-};
-
-function App() {
-  return (
-    <ErrorBoundary>
+    <Router>
       <AuthProvider>
         <IncidentProvider>
-          <Router>
-            <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route element={<PrivateShell />}>
-                <Route index element={<Dashboard />} />
-                <Route path="/threat-intel" element={<ThreatIntel />} />
-                <Route path="/workflows/:incidentId" element={<WorkflowMonitorWrapper />} />
-              </Route>
-            </Routes>
-          </Router>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/" element={<AppLayout />}>
+              <Route index element={<Navigate to="/dashboard" replace />} />
+              <Route path="dashboard" element={<Dashboard />} />
+              <Route path="threat-intel" element={<ThreatIntel />} />
+              <Route path="workflows/:incidentId" element={<WorkflowMonitor />} />
+              <Route path="audit-logs" element={<AuditLogs />} />
+              <Route path="settings" element={<Settings />} />
+              <Route path="incidents/:id" element={<IncidentDetail />} />
+            </Route>
+          </Routes>
         </IncidentProvider>
       </AuthProvider>
-    </ErrorBoundary>
+    </Router>
   );
-}
-
-
-const WorkflowMonitorWrapper: React.FC = () => {
-  const { incidentId } = useParams<{ incidentId: string }>();
-  if (!incidentId) {
-    return <div>Incident ID not provided</div>;
-  }
-  return <WorkflowMonitor incidentId={incidentId} />;
 };
 
 export default App;

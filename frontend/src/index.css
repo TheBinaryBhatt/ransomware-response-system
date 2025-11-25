@@ -1,22 +1,218 @@
+/* src/index.css */
+
+/* Tailwind Directives - These must come first */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* Custom CSS Variables */
+:root {
+  --dark-primary: #1F2121;
+  --dark-secondary: #2D2F2F;
+  --dark-surface: #252727;
+  --cream: #FCFCF9;
+  --teal-500: #218D8D;
+  --teal-600: #32B8C6;
+}
+
+/* Base Styles */
 body {
+  background-color: var(--dark-primary);
+  color: var(--cream);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  @apply bg-slate-950 text-slate-100;
-  background-image: radial-gradient(circle at 20% 20%, rgba(99, 102, 241, 0.18), transparent 55%),
-    radial-gradient(circle at 80% 0%, rgba(45, 212, 191, 0.12), transparent 40%),
-    radial-gradient(circle at 50% 100%, rgba(99, 102, 241, 0.1), transparent 55%);
+  padding: 0;
   min-height: 100vh;
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+/* Custom Animations */
+@keyframes fadeIn {
+  from { 
+    opacity: 0; 
+    transform: translateY(10px); 
+  }
+  to { 
+    opacity: 1; 
+    transform: translateY(0); 
+  }
+}
+
+@keyframes glowPulse {
+  0%, 100% { 
+    box-shadow: 0 0 5px rgba(239, 68, 68, 0.5); 
+  }
+  50% { 
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.8); 
+  }
+}
+
+@keyframes countUp {
+  from { 
+    transform: scale(0.5); 
+    opacity: 0; 
+  }
+  to { 
+    transform: scale(1); 
+    opacity: 1; 
+  }
+}
+
+@keyframes hoverLift {
+  to { 
+    transform: translateY(-2px); 
+  }
+}
+
+@keyframes shimmer {
+  0% { 
+    background-position: -200px 0; 
+  }
+  100% { 
+    background-position: 200px 0; 
+  }
+}
+
+@keyframes slideInLeft {
+  from { 
+    transform: translateX(-100%); 
+    opacity: 0; 
+  }
+  to { 
+    transform: translateX(0); 
+    opacity: 1; 
+  }
+}
+
+@keyframes bounceIn {
+  0% { 
+    transform: scale(0.3); 
+    opacity: 0; 
+  }
+  50% { 
+    transform: scale(1.05); 
+  }
+  70% { 
+    transform: scale(0.9); 
+  }
+  100% { 
+    transform: scale(1); 
+    opacity: 1; 
+  }
+}
+
+@keyframes gradientBorder {
+  0% { 
+    background-position: 0% 50%; 
+  }
+  50% { 
+    background-position: 100% 50%; 
+  }
+  100% { 
+    background-position: 0% 50%; 
+  }
+}
+
+/* Utility Classes */
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-in-out;
+}
+
+.animate-glow-pulse {
+  animation: glowPulse 2s ease-in-out infinite;
+}
+
+.animate-count-up {
+  animation: countUp 1s ease-out;
+}
+
+.animate-hover-lift:hover {
+  animation: hoverLift 0.2s ease-out forwards;
+}
+
+.animate-shimmer {
+  animation: shimmer 2s linear infinite;
+}
+
+.animate-slide-in-left {
+  animation: slideInLeft 0.3s ease-out;
+}
+
+.animate-bounce-in {
+  animation: bounceIn 0.6s ease-out;
+}
+
+.animate-gradient-border {
+  background: linear-gradient(90deg, #218D8D, #32B8C6, #218D8D);
+  background-size: 200% 200%;
+  animation: gradientBorder 3s ease infinite;
+}
+
+/* Custom Background Patterns */
+.bg-grid-pattern {
+  background-image: 
+    linear-gradient(rgba(50, 184, 198, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(50, 184, 198, 0.1) 1px, transparent 1px);
+  background-size: 50px 50px;
+}
+
+/* Glass Morphism Effect */
+.glass-morphism {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Status Indicators */
+.status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+}
+
+.status-dot.active {
+  background-color: rgb(74 222 128);
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.status-dot.inactive {
+  background-color: rgb(156 163 175);
+}
+
+.status-dot.warning {
+  background-color: rgb(250 204 21);
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.status-dot.critical {
+  background-color: rgb(239 68 68);
+  animation: glowPulse 2s ease-in-out infinite;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background-color: #2D2F2F;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #218D8D;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #32B8C6;
+}
+
+/* Focus Styles */
+*:focus-visible {
+  outline: 2px solid #218D8D;
+  outline-offset: 2px;
+}
+
+/* Selection */
+::selection {
+  background-color: rgba(50, 184, 198, 0.3);
 }

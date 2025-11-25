@@ -1,14 +1,17 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.ext.asyncio import AsyncSession
 from pathlib import Path
+import logging
+
 from core.path_helper import setup_paths
 setup_paths()
 
-from core.database import get_db, Base, engine
+from core.database import Base, engine
 from .routes import router as service_router
-from . import models  # Import models to ensure they're registered
+from . import models  # ensure models are registered
 from . import consumer
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Audit Service", version="1.0.0")
 
@@ -20,16 +23,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include the audit service routes
 app.include_router(service_router)
+
 
 @app.on_event("startup")
 async def startup_event():
     # Create tables asynchronously
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    # Start audit consumer
-    consumer.start()
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("[Audit] Database tables ensured")
+    except Exception:
+        logger.exception("[Audit] Failed creating DB tables")
+
+    # Start audit consumer but don't block startup if RabbitMQ is down.
+    try:
+        consumer.start()
+        logger.info("[Audit] Consumer start requested")
+    except Exception:
+        logger.exception("[Audit] Failed to start consumer (will continue trying)")
 
 @app.get("/health")
 async def health():

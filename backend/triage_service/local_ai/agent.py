@@ -1,170 +1,181 @@
+# backend/triage_service/local_ai/agent.py
 import json
-import re
 import logging
-from .llm_loader import local_ai_model
+import asyncio
+from typing import Any, Dict, List
+from core.rabbitmq_utils import publish_event
+
+from .llm_loader import LocalLLM
 
 logger = logging.getLogger(__name__)
 
-class TriageAgent:
-    """Autonomous SOC Triage Agent for incident analysis"""
-    
-    def __init__(self):
-        self.model = local_ai_model
-        self.available = self.model.model_loaded
-        if self.available:
-            logger.info("✅ Triage AI Agent initialized successfully with local model")
-        else:
-            logger.warning("❌ Agent using rule-based fallback - local model not loaded")
-    
-    def build_analysis_prompt(self, incident_data: dict) -> str:
-        """Create structured prompt for incident analysis"""
-        return f"""
-INCIDENT DATA:
-- Alert ID: {incident_data.get('alert_id', 'Unknown')}
-- Source: {incident_data.get('source', 'Unknown')}
-- Event Type: {incident_data.get('event_type', 'Unknown')}
-- Source IP: {incident_data.get('source_ip', 'Unknown')}
-- Affected Host: {incident_data.get('affected_host', 'Unknown')}
-- File Hash: {incident_data.get('file_hash', 'Unknown')}
-- Process: {incident_data.get('process_name', 'Unknown')}
-- Severity: {incident_data.get('severity', 'Unknown')}
-- Detection Time: {incident_data.get('detection_time', 'Unknown')}
-- Description: {incident_data.get('description', 'Unknown')}
+# Load model once at import time if available. If not available, infer_fn is None.
+try:
+    llm = LocalLLM.get_instance()
+    _infer_fn = llm.infer
+except Exception:
+    _infer_fn = None
 
-ANALYSIS CONTEXT:
-You are a cybersecurity analyst. Analyze this incident and determine if it indicates ransomware activity.
+# Prompt template used when LLM is available.
+_PROMPT_TEMPLATE = """
+You are a cybersecurity triage assistant. Given the raw alert JSON (below),
+produce a JSON object with these fields:
+- decision: one of ["confirmed_ransomware","false_positive","escalate_human"]
+- confidence: a number between 0.0 and 1.0 (two decimals)
+- reasoning: a short explanation (1-3 sentences)
+- recommended_actions: array of action strings from ["quarantine_host","block_ip","notify_analyst","collect_forensics","isolate_network","none"]
+
+Respond ONLY with valid JSON (no commentary) — example:
+{{"decision":"confirmed_ransomware","confidence":0.92,"reasoning":"...","recommended_actions":["quarantine_host","block_ip","notify_analyst"]}}
+
+ALERT_JSON:
+{alert_json}
 """
-    
-    async def analyze_incident(self, incident_data: dict) -> dict:
-        """Analyze incident using local AI model"""
-        try:
-            prompt = self.build_analysis_prompt(incident_data)
-            logger.info("Running AI triage analysis...")
-            
-            # Use local AI model for analysis
-            ai_response = self.model.generate_response(prompt)
-            
-            # Parse the AI response
-            parsed_response = self._parse_ai_response(ai_response, incident_data)
-            logger.info(f"AI Analysis completed: {parsed_response.get('decision', 'unknown')}")
-            return parsed_response
-                
-        except Exception as e:
-            logger.error(f"Error in AI analysis: {str(e)}")
-            return self._fallback_analysis(incident_data)
-    
-    def _parse_ai_response(self, ai_response: str, incident_data: dict) -> dict:
-        """Parse AI response into structured format"""
-        try:
-            # Extract threat level from response
-            threat_level = "Medium"
-            confidence = 0.7
-            reasoning = ai_response
-            
-            # Parse AI response for threat level
-            if "Critical" in ai_response:
-                threat_level = "Critical"
-                confidence = 0.9
-            elif "High" in ai_response:
-                threat_level = "High" 
-                confidence = 0.8
-            elif "Low" in ai_response:
-                threat_level = "Low"
-                confidence = 0.5
-            
-            # Parse confidence from response if available
-            confidence_match = re.search(r'Confidence:\s*(\d+)%', ai_response)
-            if confidence_match:
-                confidence = float(confidence_match.group(1)) / 100.0
-            
-            # Determine decision based on threat level
-            if threat_level in ["Critical", "High"]:
-                decision = "confirmed_ransomware"
-                auto_response = True
-            else:
-                decision = "suspicious_activity" 
-                auto_response = False
-            
-            # Extract actions from AI response
-            actions_match = re.search(r'Actions:\s*([^\n]+)', ai_response)
-            if actions_match:
-                actions = [action.strip() for action in actions_match.group(1).split(',')]
-            else:
-                actions = self._extract_actions(ai_response)
-            
-            return {
-                "decision": decision,
-                "confidence": confidence,
-                "priority": threat_level.lower(),
-                "reasoning": reasoning,
-                "recommended_actions": actions,
-                "threat_indicators": [
-                    incident_data.get('source_ip', ''),
-                    incident_data.get('file_hash', ''),
-                    incident_data.get('affected_host', '')
-                ],
-                "auto_response": auto_response,
-                "ai_analysis": True
-            }
-        except Exception as e:
-            logger.error(f"Failed to parse AI response: {e}")
-            return self._fallback_analysis(incident_data)
-    
-    def _extract_actions(self, ai_response: str) -> list:
-        """Extract recommended actions from AI response"""
-        actions = []
-        ai_response_lower = ai_response.lower()
-        
-        if "isolate" in ai_response_lower:
-            actions.append("isolate_host")
-        if "block" in ai_response_lower:
-            actions.append("block_ip") 
-        if "scan" in ai_response_lower:
-            actions.append("scan_system")
-        if "backup" in ai_response_lower or "back up" in ai_response_lower:
-            actions.append("backup_data")
-        if "quarantine" in ai_response_lower:
-            actions.append("quarantine_file")
-        if "investigate" in ai_response_lower:
-            actions.append("investigate_logs")
-        
-        if not actions:
-            actions = ["monitor", "escalate_soc"]
-        
-        return actions
-    
-    def _fallback_analysis(self, incident_data: dict) -> dict:
-        """Fallback analysis when AI fails"""
-        logger.info("Using fallback analysis logic")
-        
-        # Rule-based fallback logic
-        severity = incident_data.get('severity', '').lower()
-        event_type = incident_data.get('event_type', '').lower()
-        description = incident_data.get('description', '').lower()
-        
-        if any(word in event_type or word in description for word in ['ransomware', 'encryption', 'locked', 'wannacry']):
-            decision = "confirmed_ransomware"
-            confidence = 0.8
-            priority = "critical"
-        elif severity in ['critical', 'high'] or any(word in description for word in ['malware', 'trojan', 'backdoor']):
-            decision = "suspicious_activity"
-            confidence = 0.6
-            priority = "high"
-        else:
-            decision = "escalate_human"
-            confidence = 0.3
-            priority = "medium"
-        
-        return {
-            "decision": decision,
-            "confidence": confidence,
-            "priority": priority,
-            "reasoning": "Fallback rule-based analysis (AI unavailable)",
-            "recommended_actions": ["isolate_host", "block_ip", "escalate_soc"],
-            "threat_indicators": [incident_data.get('source_ip', ''), incident_data.get('file_hash', '')],
-            "auto_response": decision == "confirmed_ransomware",
-            "ai_analysis": False
-        }
 
-# Global agent instance
+# Lightweight heuristics fallback
+def heuristic_triage(alert: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Fast deterministic heuristics to approximate triage decision when LLM not available.
+    Returns the same schema as LLM.
+    """
+    text_blob = json.dumps(alert).lower()
+    score = 0.0
+    reasons: List[str] = []
+
+    # Indicators that increase ransomware likelihood
+    ransomware_indicators = [
+        "ransom", "encrypt", "encryption", "encrypted", "locker", "ransomware",
+        ".wallet", ".locky", ".crypt", "c2", "command-and-control", "c & c", "c2 server",
+        "file encryption", "mass file modifications", "encrypting files"
+    ]
+
+    for kw in ransomware_indicators:
+        if kw in text_blob:
+            score += 0.18
+            reasons.append(f"found indicator '{kw}'")
+
+    # suspicious filenames or extensions
+    suspicious_exts = [".exe", ".dll", ".scr", ".locked", ".crypted", ".wallet"]
+    for ext in suspicious_exts:
+        if ext in text_blob:
+            score += 0.06
+
+    # presence of known suspicious processes or known cmd patterns
+    if "psexec" in text_blob or "wmic" in text_blob or "schtasks" in text_blob:
+        score += 0.12
+        reasons.append("suspicious lateral movement tooling")
+
+    # source IP reputation hint (if flagged high severity)
+    sev = str(alert.get("severity", "")).lower()
+    if sev in ("critical", "high"):
+        score += 0.12
+        reasons.append(f"alert severity {sev}")
+
+    # presence of malware hash
+    if "hash" in alert.get("raw_data", {}) or "file_hash" in alert.get("raw_data", {}):
+        score += 0.08
+        reasons.append("file hash present")
+
+    # clamp score
+    confidence = min(0.99, round(score, 2))
+    # decide thresholds
+    if confidence >= 0.8:
+        decision = "confirmed_ransomware"
+    elif confidence >= 0.35:
+        decision = "escalate_human"
+    else:
+        decision = "false_positive"
+
+    reasoning = " ; ".join(reasons) if reasons else "No high-confidence indicators found; heuristic suggests low risk."
+
+    recommended_actions = []
+    if decision == "confirmed_ransomware":
+        recommended_actions = ["quarantine_host", "block_ip", "notify_analyst", "collect_forensics"]
+    elif decision == "escalate_human":
+        recommended_actions = ["notify_analyst", "collect_forensics"]
+    else:
+        recommended_actions = ["notify_analyst"]  # keep analyst in the loop for low-confidence
+
+    result = {
+        "decision": decision,
+        "confidence": float(confidence),
+        "reasoning": reasoning,
+        "recommended_actions": recommended_actions,
+    }
+    return result
+
+async def _call_llm_in_thread(prompt: str) -> str:
+    """
+    Run the synchronous LLM inference function in a thread to avoid blocking the event loop.
+    """
+    if _infer_fn is None:
+        raise RuntimeError("LLM not available")
+    loop = asyncio.get_running_loop()
+    # run sync function in a thread
+    text = await loop.run_in_executor(None, lambda: _infer_fn(prompt, max_tokens=512, temp=0.0))
+    return text
+
+async def analyze_incident(alert: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Primary entrypoint used by triage_service.routes.
+    Returns the triage JSON object and publishes an 'incident.triaged' event.
+    """
+    # Try LLM first if present
+    if _infer_fn:
+        try:
+            prompt = _PROMPT_TEMPLATE.format(alert_json=json.dumps(alert, default=str))
+            raw_out = await _call_llm_in_thread(prompt)
+            # Try to parse JSON from model output robustly
+            parsed = None
+            try:
+                parsed = json.loads(raw_out.strip())
+            except Exception:
+                # Some LLMs may add backticks or explanation - attempt simple extraction
+                import re
+                m = re.search(r'(\{.*\})', raw_out, flags=re.DOTALL)
+                if m:
+                    try:
+                        parsed = json.loads(m.group(1))
+                    except Exception:
+                        parsed = None
+
+            if parsed and isinstance(parsed, dict):
+                # normalize confidence to float
+                try:
+                    parsed["confidence"] = float(parsed.get("confidence", 0.0))
+                except Exception:
+                    parsed["confidence"] = 0.0
+                # ensure keys exist
+                parsed.setdefault("decision", parsed.get("decision", "escalate_human"))
+                parsed.setdefault("reasoning", parsed.get("reasoning", "LLM produced result"))
+                parsed.setdefault("recommended_actions", parsed.get("recommended_actions", []))
+                # publish event
+                try:
+                    publish_event("incident.triaged", {"incident_id": alert.get("id") or alert.get("incident_id"), "triage": parsed})
+                except Exception as e:
+                    logger.debug("Failed to publish triaged event: %s", e)
+                return parsed
+            else:
+                logger.warning("LLM returned unparsable output; falling back to heuristic. output=%s", raw_out)
+        except Exception as e:
+            logger.exception("LLM analyze failed, falling back to heuristics: %s", e)
+
+    # Fallback: heuristic
+    triage = heuristic_triage(alert)
+    try:
+        publish_event("incident.triaged", {"incident_id": alert.get("id") or alert.get("incident_id"), "triage": triage})
+    except Exception as e:
+        logger.debug("Failed to publish triaged event (heuristic): %s", e)
+    return triage
+
+# =============================================================
+# Exported Agent Object (Required by triage_service.routes)
+# =============================================================
+
+class TriageAgent:
+    async def analyze_incident(self, alert: Dict[str, Any]) -> Dict[str, Any]:
+        return await analyze_incident(alert)
+
+# This is what routes.py imports
 triage_agent = TriageAgent()
+

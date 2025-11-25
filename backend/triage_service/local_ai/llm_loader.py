@@ -1,126 +1,98 @@
-import os
+# backend/triage_service/local_ai/llm_loader.py
 import logging
-from pathlib import Path
-import sys
+import os
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Try to import llama-cpp-python with fallback
+_MODEL_DEFAULT = "triage_service/models/hermes-2-pro-mistral-7b.Q8_0.gguf"
+
+# Try to import llama_cpp, but don't fail if it's not installed.
 try:
-    from llama_cpp import Llama
-    LLAMA_AVAILABLE = True
-    logger.info("✅ llama-cpp-python is available")
-except ImportError as e:
-    LLAMA_AVAILABLE = False
-    logger.warning(f"❌ llama-cpp-python not available: {e}")
+    from llama_cpp import Llama  # type: ignore
+    _LLAMA_AVAILABLE = True
+except Exception:
+    Llama = None  # type: ignore
+    _LLAMA_AVAILABLE = False
 
-class LocalAIModel:
-    def __init__(self):
-        self.model = None
-        self.model_loaded = False
-        # Use absolute path to avoid confusion
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        self.model_path = os.path.join(current_dir, '../models/Hermes-2-Pro-Mistral-7B.Q8_0.gguf')
-        logger.info(f"🔍 Model path: {self.model_path}")
-        self.load_model()
-    
-    def load_model(self):
-        """Load the local AI model with proper error handling"""
-        if not LLAMA_AVAILABLE:
-            logger.error("llama-cpp-python not installed. Install with: pip install llama-cpp-python")
-            return
-        
-        # Check if model file exists
+class LocalLLM:
+    """
+    Safe LocalLLM wrapper:
+    - Only instantiates llama_cpp.Llama if the model file exists and llama_cpp is importable.
+    - If not available, falls back to a lightweight stub that returns deterministic JSON.
+    """
+
+    def __init__(self, model_path: str = _MODEL_DEFAULT, ctx_size: int = 4096, n_threads: int = 2):
+        self.model_path = model_path
+        self.ctx_size = ctx_size
+        self.n_threads = n_threads
+        self._disabled = False
+        self._impl = None  # real Llama instance when available
+
+        # Check model file exists before trying to instantiate
         if not os.path.exists(self.model_path):
-            logger.error(f"❌ Model file not found at: {self.model_path}")
-            # List directory contents for debugging
-            model_dir = os.path.dirname(self.model_path)
-            if os.path.exists(model_dir):
-                logger.info(f"📁 Model directory contents: {os.listdir(model_dir)}")
-            else:
-                logger.error(f"❌ Model directory not found: {model_dir}")
+            logger.warning("LocalLLM: model file not found at '%s' — LLM disabled", self.model_path)
+            self._disabled = True
             return
-        
+
+        if not _LLAMA_AVAILABLE:
+            logger.warning("LocalLLM: llama_cpp not available in this environment — LLM disabled")
+            self._disabled = True
+            return
+
         try:
-            logger.info(f"🔄 Loading local AI model from: {self.model_path}")
-            
-            # Try with minimal configuration first
-            self.model = Llama(
+            # instantiate Llama safely
+            self._impl = Llama(
                 model_path=self.model_path,
-                n_ctx=2048,  # Reduced context for testing
-                n_threads=2,  # Minimal threads
-                n_gpu_layers=0,  # CPU only for compatibility
-                verbose=True  # Enable verbose for debugging
+                n_ctx=self.ctx_size,
+                n_threads=self.n_threads,
+                use_mmap=True,
+                verbose=False,
             )
-            
-            self.model_loaded = True
-            logger.info("✅ Local AI model loaded successfully!")
-            
-            # Test the model with a simple prompt
-            test_result = self.model("Hello", max_tokens=10)
-            logger.info(f"🧪 Model test response: {test_result}")
-            
+            logger.info("LocalLLM: successfully loaded model: %s", self.model_path)
         except Exception as e:
-            logger.error(f"❌ Failed to load AI model: {e}")
-            self.model_loaded = False
-    
-    def generate_response(self, prompt: str, max_tokens: int = 256) -> str:
-        """Generate response using local AI model with fallback"""
-        if not self.model_loaded or self.model is None:
-            logger.warning("AI model not available, using rule-based fallback")
-            return self._rule_based_fallback(prompt)
-        
+            # If the Llama constructor raises, avoid leaving a half-constructed object around.
+            logger.exception("LocalLLM: failed to instantiate Llama; disabling local LLM. Error: %s", e)
+            # Ensure we don't keep a partially initialized object
+            try:
+                # if partial object exists, try to close gracefully
+                if self._impl and hasattr(self._impl, "close"):
+                    try:
+                        self._impl.close()
+                    except Exception:
+                        pass
+            finally:
+                self._impl = None
+            self._disabled = True
+
+    def predict(self, prompt: str) -> str:
+        """
+        If LLM available, call it; otherwise return a safe JSON fallback string.
+        The fallback mirrors the simple shape the triage agent expects.
+        """
+        if self._disabled or not self._impl:
+            # deterministic fallback (small JSON string). Agent will parse this or fallback heuristics.
+            fallback = '{"decision":"unknown","confidence":0.0,"reasoning":"local LLM unavailable","recommended_actions":["notify_analyst"]}'
+            logger.debug("LocalLLM.predict: returning fallback because LLM disabled.")
+            return fallback
+
         try:
-            # Enhanced prompt for security analysis
-            security_prompt = f"""Analyze this security alert:
-
-{prompt}
-
-Provide threat assessment in this format:
-Threat Level: [Low/Medium/High/Critical]
-Confidence: [0-100]%
-Actions: [comma separated actions]
-Impact: [brief description]"""
-
-            response = self.model(
-                security_prompt,
-                max_tokens=max_tokens,
-                temperature=0.3,
-                top_p=0.9,
-                echo=False
+            response = self._impl(
+                prompt,
+                max_tokens=512,
+                temperature=0.2,
+                stop=["</analysis>"],
             )
-            
-            if 'choices' in response and len(response['choices']) > 0:
-                return response['choices'][0]['text'].strip()
-            else:
-                return self._rule_based_fallback(prompt)
-                
+            # llama_cpp returns nested structure; be defensive:
+            if isinstance(response, dict):
+                choices = response.get("choices") or []
+                if choices and isinstance(choices, list):
+                    text = choices[0].get("text") or choices[0].get("message", {}).get("content")
+                    if text:
+                        return text.strip()
+                # fallback to string-conversion
+                return str(response)
+            return str(response)
         except Exception as e:
-            logger.error(f"AI model inference failed: {e}")
-            return self._rule_based_fallback(prompt)
-    
-    def _rule_based_fallback(self, prompt: str) -> str:
-        """Rule-based fallback when AI model fails"""
-        prompt_lower = prompt.lower()
-        
-        # Simple rule-based analysis
-        if any(word in prompt_lower for word in ['ransomware', 'encryption', '.locked', 'wannacry']):
-            return "Threat Level: Critical\nConfidence: 85%\nActions: Isolate system, Backup data, Contact IR team\nImpact: Data loss, system compromise, financial damage"
-        elif any(word in prompt_lower for word in ['malware', 'trojan', 'virus', 'backdoor']):
-            return "Threat Level: High\nConfidence: 75%\nActions: Scan system, Quarantine file, Update AV\nImpact: System infection, data theft, unauthorized access"
-        elif any(word in prompt_lower for word in ['brute force', 'failed login', 'ssh attack']):
-            return "Threat Level: Medium\nConfidence: 70%\nActions: Block IP, Enable MFA, Review logs\nImpact: Unauthorized access attempt, potential compromise"
-        else:
-            return "Threat Level: Low\nConfidence: 50%\nActions: Monitor, Gather more info\nImpact: Minimal, requires investigation"
-
-# Global model instance
-local_ai_model = LocalAIModel()
-
-# Test the model when this module is run directly
-if __name__ == "__main__":
-    print("🧪 Testing AI Model Loader...")
-    print(f"Model loaded: {local_ai_model.model_loaded}")
-    if local_ai_model.model_loaded:
-        test_prompt = "Ransomware detected encrypting files with .locked extension"
-        result = local_ai_model.generate_response(test_prompt)
-        print(f"Test result: {result}")
+            logger.exception("LocalLLM.predict: LLM invocation failed: %s", e)
+            return '{"decision":"unknown","confidence":0.0,"reasoning":"llm runtime error","recommended_actions":["notify_analyst"]}'

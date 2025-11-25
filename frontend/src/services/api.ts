@@ -1,82 +1,97 @@
+// src/services/api.ts
 import axios from "axios";
 import type { Incident } from "../types/Incident";
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:8000/api/v1";
-const TOKEN_STORAGE_KEY = "rrs_access_token";
+const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:8000/api/v1";
 
-export interface AuditLogEntry {
-  id: number;
-  action: string;
-  target?: string;
-  status: string;
-  details?: Record<string, unknown>;
-  created_at?: string;
-  updated_at?: string;
+// Axios instance with token injection
+export const apiClient = axios.create({
+  baseURL: API_BASE,
+  headers: { "Content-Type": "application/json" },
+});
+
+// Inject JWT automatically
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem("rrs_access_token");
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+// =============================
+// INCIDENT API ENDPOINTS
+// =============================
+
+// GET all incidents (triage service)
+export async function getIncidents(): Promise<Incident[]> {
+  const res = await apiClient.get("/triage/incidents");
+  return res.data;
 }
 
-export interface IncidentTrendPoint {
-  date: string;
-  ransomware: number;
-  falsePositive: number;
-  total: number;
-}
+// GET one incident (auto-detects from triage OR response service)
+export async function getIncidentById(id: string): Promise<Incident> {
+  try {
+    // Try triage DB first
+    const triageRes = await apiClient.get(`/triage/incidents`);
+    const triageList: Incident[] = triageRes.data;
 
-export interface IncidentTypeSlice {
-  name: string;
-  value: number;
-}
-
-export interface IncidentStatusCount {
-  status: string;
-  count: number;
-}
-
-export interface IncidentStats {
-  trends: IncidentTrendPoint[];
-  types: IncidentTypeSlice[];
-  status: IncidentStatusCount[];
-}
-
-function getAuthHeaders(): Record<string, string> {
-  const token = typeof window !== "undefined" ? localStorage.getItem(TOKEN_STORAGE_KEY) : null;
-  if (!token) {
-    return {};
+    const match = triageList.find((i) => i.id === id || i.siem_alert_id === id);
+    if (match) return match;
+  } catch (e) {
+    console.warn("Triage lookup failed:", e);
   }
-  return {
-    Authorization: `Bearer ${token}`
-  };
+
+  try {
+    // Try response service fallback
+    const res = await apiClient.get(`/response/incidents/${id}`);
+    return res.data;
+  } catch (e) {
+    console.warn("Response lookup failed:", e);
+  }
+
+  throw new Error("Incident not found in any service");
 }
+
+// Get response workflow status
+export async function getWorkflowStatus(incidentId: string): Promise<any> {
+  try {
+    const res = await apiClient.get(`/response/workflows/${incidentId}/status`);
+    return res.data;
+  } catch (e) {
+    return { status: "not_started" };
+  }
+}
+
+// Trigger a response workflow (optional)
+export async function triggerResponse(incidentId: string, automated = false, analysis: any = {}) {
+  const res = await apiClient.post(`/response/incidents/${incidentId}/respond`, {
+    automated,
+    analysis,
+  });
+  return res.data;
+}
+
+// Threat Intel lookups (optional)
+export async function lookupIP(ip: string) {
+  const res = await apiClient.get(`/response/threatintel/abuseipdb`, { params: { ip } });
+  return res.data;
+}
+
+export async function lookupHash(hash: string) {
+  const res = await apiClient.get(`/response/threatintel/malwarebazaar`, { params: { hash } });
+  return res.data;
+}
+
+// =============================
+// Export Convenience Wrapper
+// =============================
 
 export const api = {
-  getIncidents: async (): Promise<Incident[]> => {
-    const response = await axios.get(`${API_BASE_URL}/incidents`, {
-      headers: getAuthHeaders()
-    });
-    return response.data;
-  },
-
-  getIncident: async (id: string): Promise<Incident> => {
-    const response = await axios.get(`${API_BASE_URL}/incidents/${id}`, {
-      headers: getAuthHeaders()
-    });
-    return response.data;
-  },
-
-  respondToIncident: async (id: string): Promise<void> => {
-    await axios.post(`${API_BASE_URL}/incidents/${id}/respond`, {}, { headers: getAuthHeaders() });
-  },
-
-  getAuditLogs: async (): Promise<AuditLogEntry[]> => {
-    const response = await axios.get(`${API_BASE_URL}/logs`, {
-      headers: getAuthHeaders()
-    });
-    return response.data;
-  }
+  getIncidents,
+  getIncidentById,
+  getWorkflowStatus,
+  triggerResponse,
+  lookupIP,
+  lookupHash,
 };
 
-export const getIncidentStats = async (): Promise<IncidentStats> => {
-  const headers = getAuthHeaders();
-  const response = await fetch(`${API_BASE_URL}/incidents/stats`, { headers });
-  if (!response.ok) throw new Error("Failed to fetch incident statistics");
-  return response.json() as Promise<IncidentStats>;
-};
+export default api;
