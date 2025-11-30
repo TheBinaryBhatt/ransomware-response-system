@@ -1,4 +1,3 @@
-# backend/gateway/main.py
 """
 API Gateway (FastAPI + Socket.IO) - Option A (merged ASGI app)
 
@@ -7,6 +6,7 @@ Run with:
 """
 import os
 import logging
+import asyncio
 from datetime import timedelta
 from uuid import UUID
 from typing import Optional, Literal, Any
@@ -20,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
-from pydantic import BaseModel, EmailStr, constr
+from pydantic import BaseModel, EmailStr, Field
 
 from core.config import settings
 from core.database import get_db, test_connection
@@ -73,18 +73,18 @@ ALLOWED_ROLES = ("admin", "analyst", "auditor", "viewer")
 
 
 # -------------------------------------------------
-# Pydantic models
+# Pydantic models - FIXED: Use Field instead of constr
 # -------------------------------------------------
 class UserCreate(BaseModel):
-    username: constr(min_length=3, max_length=64)
+    username: str = Field(..., min_length=3, max_length=64)
     email: EmailStr
-    password: constr(min_length=8)
+    password: str = Field(..., min_length=8)
     role: Literal["admin", "analyst", "auditor", "viewer"] = "analyst"
     is_active: bool = True
 
 
 class UserUpdate(BaseModel):
-    password: Optional[constr(min_length=8)] = None
+    password: Optional[str] = Field(None, min_length=8)
     role: Optional[Literal["admin", "analyst", "auditor", "viewer"]] = None
     is_active: Optional[bool] = None
 
@@ -117,20 +117,66 @@ async def handle_domain_event(routing_key: str, payload: dict) -> None:
 
 
 # -------------------------------------------------
-# Startup / Shutdown
+# Database Connection Retry Logic
+# -------------------------------------------------
+async def wait_for_db_connection(max_retries: int = 30, delay: float = 2.0) -> bool:
+    """Wait for database to be ready with retry logic."""
+    for attempt in range(max_retries):
+        if await test_connection():
+            logger.info(f"[gateway] Database connection established on attempt {attempt + 1}")
+            return True
+        logger.warning(f"[gateway] Database connection failed (attempt {attempt + 1}/{max_retries}), retrying in {delay}s...")
+        await asyncio.sleep(delay)
+    logger.error("[gateway] Database connection failed after all retries")
+    return False
+
+
+# -------------------------------------------------
+# RabbitMQ Connection Retry Logic - ACTUAL IMPLEMENTATION
+# -------------------------------------------------
+async def wait_for_rabbitmq_connection(max_retries: int = 30, delay: float = 2.0) -> bool:
+    """Wait for RabbitMQ to be ready by testing the connection."""
+    rabbitmq_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
+    
+    for attempt in range(max_retries):
+        try:
+            # Test RabbitMQ connection by trying to connect
+            import aio_pika
+            connection = await aio_pika.connect_robust(rabbitmq_url)
+            await connection.close()
+            logger.info(f"[gateway] RabbitMQ connection established on attempt {attempt + 1}")
+            return True
+        except Exception as e:
+            logger.warning(f"[gateway] RabbitMQ connection failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(delay)
+    
+    logger.error("[gateway] RabbitMQ connection failed after all retries")
+    return False
+
+
+# -------------------------------------------------
+# Startup / Shutdown - UPDATED with retry logic
 # -------------------------------------------------
 @app.on_event("startup")
 async def startup_event():
     logger.info("🚀 Starting API Gateway...")
 
-    if not await test_connection():
+    # Wait for database with retry logic
+    if not await wait_for_db_connection():
         logger.error("[gateway] Database connection failed on startup")
+        # Don't exit - let the service continue and retry connections
+
+    # Wait for RabbitMQ with retry logic  
+    if not await wait_for_rabbitmq_connection():
+        logger.warning("[gateway] RabbitMQ connection failed on startup")
 
     try:
         await start_event_bridge(handle_domain_event)
         logger.info("[gateway] Event bridge started")
     except Exception:
         logger.exception("[gateway] Event bridge init failed")
+        # Don't exit - let the service continue without event bridge
 
 
 @app.on_event("shutdown")

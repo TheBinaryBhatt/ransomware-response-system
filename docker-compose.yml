@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
 
   # ----------------------------------------
@@ -71,6 +69,7 @@ services:
     container_name: backend-base-build
     environment:
       - PYTHONUNBUFFERED=1
+    # Remove command and ports - this should just build the image, not run as a service
     networks:
       - app-network
 
@@ -81,15 +80,17 @@ services:
   celery_worker:
     image: backend_base:latest
     container_name: ransomware-celery
-    command: [ "celery", "-A", "core.celery_app:celery_app", "worker", "--loglevel=info", "--concurrency=2" ]
+    # REMOVED: --uid=celery (causing the user not found error)
+    command: ["celery", "-A", "core.celery_app.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://admin:supersecretpassword@postgres:5432/ransomware_db}
-      - SECRET_KEY=${SECRET_KEY:-dev-super-secret-key-please-change-1234567890}
+      - DATABASE_URL=${DATABASE_URL}
+      - SECRET_KEY=${SECRET_KEY}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - PYTHONPATH=/app:/app/shared_lib/src
+      - PYTHONPATH=/app
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - RABBITMQ_EXCHANGE=${RABBITMQ_EXCHANGE}
     depends_on:
       postgres:
         condition: service_healthy
@@ -104,16 +105,22 @@ services:
   gateway:
     image: backend_base:latest
     container_name: ransomware-gateway
-    command: [ "python", "-m", "gateway.main" ]
+    command: [ "uvicorn", "gateway.main:socket_app", "--host", "0.0.0.0", "--port", "8000" ]
     ports:
       - "8000:8000"
     environment:
       - SERVICE_NAME=GATEWAY
-      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://admin:supersecretpassword@postgres:5432/ransomware_db}
-      - SECRET_KEY=${SECRET_KEY:-dev-super-secret-key-please-change-1234567890}
+      - DATABASE_URL=${DATABASE_URL}
+      - SECRET_KEY=${SECRET_KEY}
       - REDIS_URL=redis://redis:6379/0
-      - PYTHONPATH=/app:/app/shared_lib/src
+      - PYTHONPATH=/app
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - RABBITMQ_EXCHANGE=${RABBITMQ_EXCHANGE}
+      - INGESTION_SERVICE_URL=http://ingestion_service:8001
+      - TRIAGE_SERVICE_URL=http://triage_service:8002
+      - RESPONSE_SERVICE_URL=http://response_service:8003
+      - AUDIT_SERVICE_URL=http://audit_service:8004
+      - GATEWAY_CORS_ORIGINS=*
     depends_on:
       postgres:
         condition: service_healthy
@@ -121,10 +128,6 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-      ingestion_service:
-        condition: service_started
-      triage_service:
-        condition: service_started
     restart: unless-stopped
     networks:
       - app-network
@@ -137,11 +140,12 @@ services:
       - "8001:8001"
     environment:
       - SERVICE_NAME=INGESTION
-      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://admin:supersecretpassword@postgres:5432/ransomware_db}
+      - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=redis://redis:6379/0
-      - SECRET_KEY=${SECRET_KEY:-dev-super-secret-key-please-change-1234567890}
-      - PYTHONPATH=/app:/app/shared_lib/src
+      - SECRET_KEY=${SECRET_KEY}
+      - PYTHONPATH=/app
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - RABBITMQ_EXCHANGE=${RABBITMQ_EXCHANGE}
     depends_on:
       postgres:
         condition: service_healthy
@@ -161,11 +165,12 @@ services:
       - "8002:8002"
     environment:
       - SERVICE_NAME=TRIAGE
-      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://admin:supersecretpassword@postgres:5432/ransomware_db}
+      - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=redis://redis:6379/0
-      - SECRET_KEY=${SECRET_KEY:-dev-super-secret-key-please-change-1234567890}
-      - PYTHONPATH=/app:/app/shared_lib/src
+      - SECRET_KEY=${SECRET_KEY}
+      - PYTHONPATH=/app
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - RABBITMQ_EXCHANGE=${RABBITMQ_EXCHANGE}
     depends_on:
       postgres:
         condition: service_healthy
@@ -185,11 +190,12 @@ services:
       - "8003:8003"
     environment:
       - SERVICE_NAME=RESPONSE
-      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://admin:supersecretpassword@postgres:5432/ransomware_db}
+      - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=redis://redis:6379/0
-      - SECRET_KEY=${SECRET_KEY:-dev-super-secret-key-please-change-1234567890}
-      - PYTHONPATH=/app:/app/shared_lib/src
+      - SECRET_KEY=${SECRET_KEY}
+      - PYTHONPATH=/app
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - RABBITMQ_EXCHANGE=${RABBITMQ_EXCHANGE}
     depends_on:
       postgres:
         condition: service_healthy
@@ -209,11 +215,12 @@ services:
       - "8004:8004"
     environment:
       - SERVICE_NAME=AUDIT
-      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://admin:supersecretpassword@postgres:5432/ransomware_db}
+      - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=redis://redis:6379/0
-      - SECRET_KEY=${SECRET_KEY:-dev-super-secret-key-please-change-1234567890}
-      - PYTHONPATH=/app:/app/shared_lib/src
+      - SECRET_KEY=${SECRET_KEY}
+      - PYTHONPATH=/app
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - RABBITMQ_EXCHANGE=${RABBITMQ_EXCHANGE}
     healthcheck:
       test: [ "CMD-SHELL", "curl -f http://localhost:8004/health || exit 1" ]
       interval: 10s
@@ -254,7 +261,6 @@ services:
 volumes:
   postgres_data:
   rabbitmq_data:
-
 
 networks:
   app-network:

@@ -1,7 +1,9 @@
+# backend/audit_service/main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 import logging
+import asyncio
 
 from core.path_helper import setup_paths
 setup_paths()
@@ -36,12 +38,14 @@ async def startup_event():
     except Exception:
         logger.exception("[Audit] Failed creating DB tables")
 
-    # Start audit consumer but don't block startup if RabbitMQ is down.
+    # Start audit consumer but ensure persist runs on the main loop
     try:
-        consumer.start()
+        main_loop = asyncio.get_running_loop()
+        consumer.start(main_loop=main_loop)
         logger.info("[Audit] Consumer start requested")
     except Exception:
         logger.exception("[Audit] Failed to start consumer (will continue trying)")
+
 
 @app.get("/health")
 async def health():

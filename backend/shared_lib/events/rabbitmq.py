@@ -93,7 +93,20 @@ async def publish_event(routing_key: str, body: dict, rabbitmq_host: str = RABBI
 
     assert _exchange is not None, "Exchange not declared"
 
-    payload = json.dumps(body).encode("utf-8")
+    # Ensure body is JSON-serializable
+    try:
+        payload = json.dumps(body).encode("utf-8")
+    except Exception:
+        # fallback: convert non-serializables to strings
+        def _safe(o):
+            try:
+                json.dumps(o)
+                return o
+            except Exception:
+                return str(o)
+        safe_body = {k: _safe(v) for k, v in (body.items() if isinstance(body, dict) else [])}
+        payload = json.dumps(safe_body).encode("utf-8")
+
     message = Message(
         payload,
         content_type="application/json",
@@ -173,40 +186,45 @@ def start_consumer_thread(
     auto_delete: bool = False,
 ) -> threading.Thread:
     """
-    Start a RabbitMQ consumer in a separate thread for synchronous code.
-    This wraps the async consumer for compatibility with sync code.
+    Start a RabbitMQ consumer inside a thread, but DO NOT create a new event loop.
+    Instead, schedule the consumer on the main FastAPI event loop.
+    This avoids the 'Future attached to a different loop' RuntimeError.
     """
-    def run_consumer():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        async def async_handler(routing_key: str, payload: Dict[str, Any]):
-            # Call the synchronous handler
-            handler(routing_key, payload)
-        
+
+    # Get the already running main event loop used by FastAPI/Uvicorn.
+    try:
+        main_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # If somehow no loop is running (rare), fall back safely.
+        main_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(main_loop)
+
+    async def async_handler(routing_key: str, payload: Dict[str, Any]):
         try:
-            # Start the async consumer
-            loop.run_until_complete(
-                start_consumer(
-                    queue_name=queue_name,
-                    binding_keys=binding_keys,
-                    handler=async_handler,
-                    rabbitmq_host=rabbitmq_host,
-                    prefetch=prefetch,
-                    durable=durable,
-                    auto_delete=auto_delete,
-                )
-            )
-            # Keep the loop running
-            loop.run_forever()
-        except Exception as e:
-            logger.exception("Consumer thread error: %s", e)
-        finally:
-            loop.close()
-    
-    thread = threading.Thread(target=run_consumer, daemon=True)
+            handler(routing_key, payload)
+        except Exception:
+            logger.exception("Handler raised in consumer thread")
+
+    # Start the consumer INSIDE the main loop (correct loop)
+    async def schedule_consumer():
+        await start_consumer(
+            queue_name=queue_name,
+            binding_keys=binding_keys,
+            handler=async_handler,
+            rabbitmq_host=rabbitmq_host,
+            prefetch=prefetch,
+            durable=durable,
+            auto_delete=auto_delete,
+        )
+
+    # Thread only triggers the scheduling, does NOT run any loop.
+    def runner():
+        asyncio.run_coroutine_threadsafe(schedule_consumer(), main_loop)
+
+    thread = threading.Thread(target=runner, daemon=True)
     thread.start()
     return thread
+
 
 
 def run_background_consumer(loop: asyncio.AbstractEventLoop, queue_name: str, binding_keys, handler, rabbitmq_host: str = RABBITMQ_HOST):
@@ -225,18 +243,3 @@ def run_background_consumer(loop: asyncio.AbstractEventLoop, queue_name: str, bi
 #
 # or use lifespan context manager and await these.
 # -------------------------------------------------------------------------
-
-
-# If module is imported and run directly for a quick smoke test (optional)
-if __name__ == "__main__":  # pragma: no cover - manual smoke test
-    async def _test():
-        await init_event_bus()
-        async def handler(k, p):
-            print("handled", k, p)
-        # start a consumer and publish a test message
-        await start_consumer("example_queue", ["test.key"], handler)
-        await publish_event("test.key", {"hello": "world"})
-        # keep running shortly to receive
-        await asyncio.sleep(2)
-        await close_event_bus()
-    asyncio.run(_test())

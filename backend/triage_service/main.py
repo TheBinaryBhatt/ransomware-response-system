@@ -2,13 +2,18 @@
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import logging
 
-from core.database import Base, engine
+from core.database import Base, engine, wait_for_db
+from core.models_init import *
+from . import models
 from .routes import router as service_router
 
 # Import the consumer (synchronous thread-based consumer)
 from . import consumer
 import asyncio
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Triage Service", version="1.0.0")
 
@@ -26,9 +31,12 @@ app.include_router(service_router, prefix="/api/v1")
 
 
 @app.on_event("startup")
-@app.on_event("startup")
 async def startup_event():
-    from . import models
+    # Wait for database before creating tables
+    if not await wait_for_db():
+        logger.error("[Triage] Database connection failed on startup")
+    else:
+        logger.info("[Triage] Database connection established")
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -36,7 +44,8 @@ async def startup_event():
     loop = asyncio.get_running_loop()
     consumer.start_consumer_background(loop)
 
-    print("[Triage] Consumer started and DB initialized.")
+    logger.info("[Triage] Consumer started and DB initialized.")
+
 
 
 @app.on_event("shutdown")
@@ -46,7 +55,7 @@ async def shutdown_event():
     call them here. For now the consumer threads are daemon threads and will stop
     when the process exits.
     """
-    print("[Triage] Shutdown event called.")
+    logger.info("[Triage] Shutdown event called.")
 
 
 @app.get("/health")
@@ -61,4 +70,4 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8002)  # nosec B104
+    uvicorn.run(app, host="0.0.0.0", port=8002)

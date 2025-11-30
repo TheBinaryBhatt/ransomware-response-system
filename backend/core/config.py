@@ -43,8 +43,8 @@ class Settings(BaseSettings):
     database_url: Optional[PostgresDsn] = None
 
     # PostgreSQL container defaults (only used if you build URLs dynamically)
-    postgres_user: str = "postgres"
-    postgres_password: str = "postgres"
+    postgres_user: str = "admin"
+    postgres_password: str = "supersecretpassword"
     postgres_db: str = "ransomware_db"
 
     # Redis
@@ -118,4 +118,11 @@ class Settings(BaseSettings):
 
 
 # Single global settings instance used by services
-settings = Settings()
+from os import getenv
+
+if not getenv("BUILDING_DOCKER_IMAGE"):
+    settings = Settings()
+else:
+    # dummy object with only required fields
+    settings = Settings(secret_key="x"*32)
+

@@ -15,6 +15,7 @@ from core.path_helper import setup_paths
 setup_paths()
 
 from core.database import get_db, Base, engine
+from core.models_init import *
 from shared_lib.events.rabbitmq import init_event_bus
 
 from .routes import router as service_router
@@ -53,9 +54,9 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 async def startup_event():
     print("[Response] Initializing service...")
 
-    # Initialize RabbitMQ event bus connection
+    # Initialize RabbitMQ event bus connection (await)
     try:
-        init_event_bus()
+        await init_event_bus()
         print("[Response] Event bus initialized.")
     except Exception as e:
         print(f"[Response] ERROR initializing event bus: {e}")
@@ -68,9 +69,10 @@ async def startup_event():
     except Exception as e:
         print(f"[Response] DB initialization failed: {e}")
 
-    # Start RabbitMQ consumer
+    # Start RabbitMQ consumer — ensure consumer schedules processing on main loop
     try:
-        consumer.start()
+        main_loop = __import__("asyncio").get_running_loop()
+        consumer.start(main_loop=main_loop)
         print("[Response] Consumer started.")
     except Exception as e:
         print(f"[Response] ERROR starting consumer: {e}")

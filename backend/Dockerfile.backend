@@ -2,6 +2,8 @@ FROM python:3.11-slim-bookworm
 
 ENV PATH="/usr/local/bin:$PATH"
 
+ENV BUILDING_DOCKER_IMAGE=1
+
 WORKDIR /app
 
 # Install system dependencies
@@ -42,3 +44,13 @@ ENV PYTHONPATH="/app"
 EXPOSE 8000 8001 8002 8003 8004
 
 CMD ["python", "-m", "gateway.main"]
+
+# Create required directories
+RUN mkdir -p /app/sigma_rules \
+  /app/triage_service/models \
+  /app/shared_lib/integrations/yara_rules
+
+# Create placeholder files if they don't exist
+RUN touch /app/sigma_rules/.gitkeep \
+  /app/triage_service/models/.gitkeep \
+  /app/shared_lib/integrations/yara_rules/.gitkeep

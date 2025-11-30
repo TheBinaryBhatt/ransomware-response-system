@@ -1,8 +1,10 @@
 # backend/core/database.py
 import os
 import logging
+import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy import Column, Integer, String, DateTime, JSON, Text
 import uuid
 from sqlalchemy.types import TypeDecorator, CHAR
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -15,35 +17,34 @@ from .config import settings
 logger = logging.getLogger(__name__)
 
 class GUID(TypeDecorator):
-    """Platform-independent GUID type.
-
-    Uses PostgreSQL UUID type, otherwise uses VARCHAR(36).
-    """
+    """Platform-independent GUID type."""
     impl = CHAR
     cache_ok = True
 
-    def load_dialect_impl(self, dialect: Dialect):
-        if dialect.name == "postgresql":
-            return dialect.type_descriptor(PG_UUID(as_uuid=True))
+    def load_dialect_impl(self, dialect):
+        if dialect.name == 'postgresql':
+            return dialect.type_descriptor(PG_UUID())
         else:
-            return dialect.type_descriptor(String(36))
+            return dialect.type_descriptor(CHAR(36))
 
     def process_bind_param(self, value, dialect):
         if value is None:
-            return None
-        # if using Postgres, leave UUID objects as-is (asyncpg accepts uuid.UUID)
-        if dialect.name == "postgresql":
             return value
-        # otherwise store string representation
-        return str(value)
+        elif dialect.name == 'postgresql':
+            return str(value)
+        else:
+            if not isinstance(value, uuid.UUID):
+                return str(uuid.UUID(value))
+            else:
+                return str(value)
 
     def process_result_value(self, value, dialect):
         if value is None:
-            return None
-        if dialect.name == "postgresql":
             return value
-        # convert string to uuid.UUID for non-postgres backends
-        return uuid.UUID(value) if isinstance(value, str) else value
+        else:
+            if not isinstance(value, uuid.UUID):
+                return uuid.UUID(value)
+            return value
 
 
 # Build the canonical DATABASE_URL:
@@ -69,12 +70,15 @@ except Exception:
 
 logger.info("[DB] Using URL: %s", masked)
 
-# Create engine and session factory
+# Create engine and session factory with connection retry settings
 engine = create_async_engine(
     DATABASE_URL,
-    echo=False,  # set to True temporarily for debugging but False in production
+    echo=False,
     future=True,
     pool_pre_ping=True,
+    pool_recycle=300,
+    pool_timeout=30,
+    max_overflow=20,
 )
 
 AsyncSessionLocal = sessionmaker(
@@ -92,36 +96,50 @@ async def get_db():
         try:
             yield session
         finally:
-            # session context manager will close, but keep explicit call for clarity
             await session.close()
 
 
-# Test database connection
+# Test database connection with better error handling
 async def test_connection() -> bool:
     try:
         async with AsyncSessionLocal() as session:
             await session.execute(text("SELECT 1"))
-            # do not commit for read-only check
         logger.info("[DB] Connection successful")
         return True
     except Exception as e:
-        logger.exception("[DB] Connection failed")
+        logger.error(f"[DB] Connection failed: {str(e)}")
         return False
 
 
+# Wait for database with retry logic
+async def wait_for_db(max_retries: int = 30, delay: float = 2.0) -> bool:
+    """Wait for database to be ready with retry logic."""
+    for attempt in range(max_retries):
+        if await test_connection():
+            logger.info(f"[DB] Database connection established on attempt {attempt + 1}")
+            return True
+        logger.warning(f"[DB] Database connection failed (attempt {attempt + 1}/{max_retries}), retrying in {delay}s...")
+        await asyncio.sleep(delay)
+    logger.error("[DB] Database connection failed after all retries")
+    return False
+
+
 # Base model shared by all services (example)
-from sqlalchemy import Column, String, DateTime, JSON, Boolean, Text
+from sqlalchemy import Column, String, DateTime, JSON
 from datetime import datetime
+import uuid
 
 class IncidentBase(Base):
     __abstract__ = True
-    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
-    siem_alert_id = Column(String, nullable=False)
-    source = Column(String, default="wazuh")
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    siem_alert_id = Column(String, index=True)
+    source = Column(String)
     raw_data = Column(JSON)
     timestamp = Column(DateTime, default=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 
 
 # Initialize models helper

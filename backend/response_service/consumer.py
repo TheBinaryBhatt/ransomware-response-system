@@ -2,143 +2,138 @@
 import os
 import logging
 import asyncio
-from typing import Dict
-
+from typing import Dict, Optional
 from sqlalchemy import select
-
 from core.database import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
 
-# Try to import both possible helpers (compat layer). One of these should exist in shared_lib.events.rabbitmq
+# Load consumer starter
 try:
-    # preferred helper if available (spawns a thread running an async consumer)
     from shared_lib.events.rabbitmq import start_consumer_thread as _start_consumer_helper
 except Exception:
     try:
-        # older/simpler name
         from shared_lib.events.rabbitmq import start_consumer as _start_consumer_helper
     except Exception:
         _start_consumer_helper = None
 
 from shared_lib.events.rabbitmq import publish_event
-
-# Local agent
 from response_service.local_ai.response_agent import response_agent
 from .models import ResponseIncident
 
-# Config
 QUEUE_NAME = os.getenv("RESPONSE_QUEUE", "response.incidents")
 BINDING_KEYS = os.getenv("RESPONSE_BINDINGS", "triage.completed,incident.triaged").split(",")
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
 
+# main_loop will be set by the caller (startup) so we always schedule DB operations on the main uvicorn loop
+MAIN_LOOP: Optional[asyncio.AbstractEventLoop] = None
 
-async def _process_and_publish(payload: Dict):
-    """
-    Async processing pipeline:
-      - call response_agent.analyze_incident (async)
-      - publish response.selected with complete decision + intel
-    """
+
+async def _process(payload: Dict):
     incident_id = payload.get("incident_id")
-    triage_result = payload.get("triage_result", {})
+    triage_result = payload.get("triage_result", {}) or {}
+    raw_data = payload.get("raw_data") or triage_result.get("raw_data", {})
+
     try:
-        # call the async analyze_incident (agent returns dict)
+        # AI agent (async)
         decision = await response_agent.analyze_incident({
-            "id": incident_id,
             "incident_id": incident_id,
-            **triage_result,
-            "raw_data": payload.get("raw_data") or {}
+            **(triage_result if isinstance(triage_result, dict) else {}),
+            "raw_data": raw_data
         })
 
-        # Create or update ResponseIncident
+        # DB save/update performed inside AsyncSessionLocal
         async with AsyncSessionLocal() as db:
-            result = await db.execute(
-                select(ResponseIncident).where(ResponseIncident.id == incident_id)
-            )
+            result = await db.execute(select(ResponseIncident).where(ResponseIncident.id == incident_id))
             incident = result.scalar_one_or_none()
-            
+
             if not incident:
-                # Extract data from payload
-                triage_result = payload.get("triage_result", {})
-                raw_data = payload.get("raw_data") or payload.get("triage_result", {}).get("raw_data", {})
-                
                 incident = ResponseIncident(
                     id=incident_id,
-                    siem_alert_id=raw_data.get("alert_id", incident_id),
-                    source=raw_data.get("source", "triage_service"),
+                    siem_alert_id=(raw_data.get("alert_id") if isinstance(raw_data, dict) else incident_id),
+                    source=(raw_data.get("source") if isinstance(raw_data, dict) else "triage_service"),
                     raw_data=raw_data,
                     triage_result=triage_result,
                     response_status="pending"
                 )
                 db.add(incident)
             else:
-                # Update existing incident with triage result
-                incident.triage_result = payload.get("triage_result", {})
+                incident.triage_result = triage_result
                 incident.response_status = "pending"
-            
-            await db.commit()
-    
-        event_body = {
-            "incident_id": incident_id,
-            "decision": decision.get("decision", None) or decision.get("decision_text", None) or decision.get("decision_text", ""),
-            "score": decision.get("score", decision.get("score", None)),
-            "confidence": decision.get("confidence", None),
-            "suggested_actions": decision.get("suggested_actions") or decision.get("actions") or [],
-            "full_decision": decision,  # full payload for audit / UI
-        }
 
-        await publish_event("response.selected", event_body, rabbitmq_host=RABBITMQ_HOST)
-        logger.info("[Response] Published response.selected for %s (score=%s)", incident_id, event_body.get("score"))
+            await db.commit()
+
+        # Publish decision (publish_event is async)
+        await publish_event("response.selected", {
+            "incident_id": incident_id,
+            "decision": decision.get("decision") if isinstance(decision, dict) else decision,
+            "score": decision.get("score") if isinstance(decision, dict) else None,
+            "confidence": decision.get("confidence") if isinstance(decision, dict) else None,
+            "suggested_actions": decision.get("actions") if isinstance(decision, dict) else [],
+            "full_decision": decision
+        }, rabbitmq_host=RABBITMQ_HOST)
+
+        logger.info("[Response] Published decision for %s", incident_id)
 
     except Exception as e:
-        logger.exception("[Response] analyze/publish failed for %s: %s", incident_id, e)
-        await publish_event("response.failed", {"incident_id": incident_id, "error": str(e)}, rabbitmq_host=RABBITMQ_HOST)
+        logger.exception("[Response] Error processing %s: %s", incident_id, e)
+        try:
+            await publish_event("response.failed",
+                {"incident_id": incident_id, "error": str(e)},
+                rabbitmq_host=RABBITMQ_HOST
+            )
+        except Exception:
+            logger.exception("[Response] Failed publishing response.failed for %s", incident_id)
 
 
 def _handle_event(routing_key: str, payload: Dict):
     """
-    Synchronous handler invoked by the thread-based consumer.
-    We start a short-lived asyncio task to run the async pipeline (safe in worker thread).
+    Runs inside consumer thread → schedule onto MAIN_LOOP (the server's loop) to avoid cross-loop futures.
+    If MAIN_LOOP is not set, fallback to the current loop (best-effort).
     """
-    logger.info("[Response] Received %s -> %s", routing_key, {"incident_id": payload.get("incident_id")})
-    try:
-        # asyncio.run is safe for short blocking tasks executed in a thread (created by start_consumer_thread)
-        asyncio.run(_process_and_publish(payload))
-    except Exception:
-        # final safety net (should be logged in _process_and_publish)
-        logger.exception("[Response] Unexpected failure handling event for %s", payload.get("incident_id"))
+    global MAIN_LOOP
+
+    # If MAIN_LOOP set, then schedule coroutine thread-safely onto that loop
+    if MAIN_LOOP:
         try:
-            asyncio.run(publish_event("response.failed", {"incident_id": payload.get("incident_id"), "error": "handler_crash"}, rabbitmq_host=RABBITMQ_HOST))
+            asyncio.run_coroutine_threadsafe(_process(payload), MAIN_LOOP)
+            return
         except Exception:
-            logger.exception("[Response] Failed to publish response.failed")
+            logger.exception("[Response] Failed to schedule on MAIN_LOOP, falling back to local create_task")
+
+    # Fallback: try to use current running loop
+    try:
+        loop = asyncio.get_event_loop()
+        loop.create_task(_process(payload))
+    except RuntimeError:
+        # no running loop in this thread — spawn a new background task on a new loop
+        def _run():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(_process(payload))
+            loop.close()
+        t = __import__("threading").Thread(target=_run, daemon=True)
+        t.start()
 
 
-_consumer_thread = None
-
-
-def start(rabbitmq_host: str = None):
+def start(rabbitmq_host: str = None, main_loop: Optional[asyncio.AbstractEventLoop] = None):
     """
-    Start the background consumer. This function is called from response_service.main startup.
+    Start the consumer. Pass `main_loop` (the uvicorn/fastapi running loop) so DB coroutines are scheduled there.
     """
-    global _consumer_thread
+    global _start_consumer_helper, MAIN_LOOP
     rabbitmq_host = rabbitmq_host or RABBITMQ_HOST
 
+    # record main loop for scheduling
+    if main_loop:
+        MAIN_LOOP = main_loop
+
     if _start_consumer_helper is None:
-        logger.error("[Response] No consumer-start helper found in shared_lib.events.rabbitmq. Cannot start consumer.")
+        logger.error("No RabbitMQ consumer helper available.")
         return None
 
-    # if already started, return existing
-    try:
-        # if the helper is a start_consumer style (async consumer starter), it may return a task or tag
-        _consumer_thread = _start_consumer_helper(
-            QUEUE_NAME,
-            BINDING_KEYS,
-            _handle_event,
-            rabbitmq_host=rabbitmq_host,
-        )
-        logger.info("[Response] Consumer started (queue=%s bindings=%s host=%s)", QUEUE_NAME, BINDING_KEYS, rabbitmq_host)
-    except Exception as e:
-        logger.exception("[Response] Failed starting consumer: %s", e)
-        _consumer_thread = None
-
-    return _consumer_thread
+    return _start_consumer_helper(
+        QUEUE_NAME,
+        BINDING_KEYS,
+        _handle_event,
+        rabbitmq_host=rabbitmq_host,
+    )
