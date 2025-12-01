@@ -149,7 +149,7 @@ async def respond_to_incident(
 
 ):
     # Enforce that only analysts/admins can trigger responses
-    role = user.get("role", "viewer")
+    role = user.role
     if role not in ("analyst", "admin"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -160,7 +160,7 @@ async def respond_to_incident(
 
     triage_result_raw = data.get("triage_result")
     analysis = data.get("analysis", {}) or {}
-    agent_id = analysis.get("agent_id") or user["username"]
+    agent_id = analysis.get("agent_id") or user.username
 
     # Fetch incident
     result = await db.execute(
