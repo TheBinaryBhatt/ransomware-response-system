@@ -25,13 +25,25 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 # Dummy user -- replace with DB-backed user store in production
 def _make_fake_user_db():
     # hashing here is fine for local dev, but not used in production
-    return {
+        return {
         "admin": {
             "username": "admin",
             # keep a stable hashed password for process lifetime
-            "hashed_password": pwd_context.hash("password")
-        }
+            "hashed_password": pwd_context.hash("password"),
+            "role": "admin",
+        },
+        "analyst": {
+            "username": "analyst",
+            "hashed_password": pwd_context.hash("password"),
+            "role": "analyst",
+        },
+        "viewer": {
+            "username": "viewer",
+            "hashed_password": pwd_context.hash("password"),
+            "role": "viewer",
+        },
     }
+
 
 fake_user_db = _make_fake_user_db()
 

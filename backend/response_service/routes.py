@@ -8,7 +8,7 @@ from sqlalchemy import select
 from typing import List, Optional
 from pydantic import BaseModel, Field, ValidationError
 from core.database import get_db
-from .models import ResponseIncident
+from core.models import ResponseIncident
 from shared_lib.integrations.abuseipdb_client import abuseipdb_client
 from shared_lib.integrations.malwarebazaar_client import malwarebazaar_client
 from shared_lib.integrations.virustotal_client import virustotal_client
@@ -21,6 +21,7 @@ from .tasks import execute_response_actions
 
 from .schemas.timeline import IncidentTimeline, TimelineEntry
 from audit_service.models import AuditLog
+from audit_service.local_ai.audit_agent import audit_agent
 
 from datetime import datetime, timezone
 import asyncio
@@ -144,8 +145,16 @@ async def respond_to_incident(
     request: Request,
     incident_id: str,
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_user)
+    user = Depends(get_current_user)
+
 ):
+    # Enforce that only analysts/admins can trigger responses
+    role = user.get("role", "viewer")
+    if role not in ("analyst", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only analysts or admins can trigger automated responses",
+        )
     data = await request.json()
     is_automated = data.get("automated", False)
 
@@ -184,14 +193,38 @@ async def respond_to_incident(
         await db.rollback()
         raise HTTPException(500, "Failed to persist incident before triggering response")
 
-    # ---- FIXED ---- Correct Celery triggering
+    # Record audit log for response trigger
+    try:
+        await audit_agent.record_action(
+            action="response_triggered",
+            target=str(incident_id),
+            status="initiated",
+            actor=user.get("username", "unknown"),
+            resource_type="incident",
+            details={
+                "automated": is_automated,
+                "agent_id": agent_id,
+                "triage_provided": bool(triage_model),
+            },
+        )
+    except Exception:
+        # We don't block the response on audit failure
+        pass
+
+    # Trigger playbook async
     async_result = execute_response_actions.delay(incident_id, agent_id)
+
+    # Store Celery task id on the incident so /workflows/{incident_id}/status works
     incident.current_task_id = async_result.id
+    incident.updated_at = datetime.utcnow()
 
     try:
         await db.commit()
     except Exception:
         await db.rollback()
+        # Do NOT fail the whole call just because saving task_id failed
+        # We still return that the workflow was triggered
+        pass
 
     return {
         "status": "workflow_triggered",
@@ -303,12 +336,18 @@ async def query_virustotal(
 # INCIDENT TIMELINE
 # ---------------------------
 
+# ---------------------------
+# INCIDENT TIMELINE (UPGRADED)
+# ---------------------------
+
 @router.get("/incidents/{incident_id}/timeline", response_model=IncidentTimeline)
 async def get_incident_timeline(
     incident_id: str,
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_user)
+    user = Depends(get_current_user)
+
 ):
+    # 1) Load incident
     result = await db.execute(
         select(ResponseIncident).where(ResponseIncident.id == incident_id)
     )
@@ -317,7 +356,9 @@ async def get_incident_timeline(
         raise HTTPException(404, "Incident not found")
 
     triage = incident.triage_result or {}
+    analysis = incident.analysis or {}
 
+    # 2) Load audit logs
     audit_rows = await db.execute(
         select(AuditLog)
         .where(AuditLog.target == incident_id)
@@ -328,18 +369,63 @@ async def get_incident_timeline(
     events: List[TimelineEntry] = []
 
     for row in audit_logs:
-        events.append(TimelineEntry(
-            timestamp=row.timestamp,
-            event_type=row.action,
-            source=row.resource_type,
-            details=row.details or {}
-        ))
+        events.append(
+            TimelineEntry(
+                timestamp=row.timestamp,
+                event_type=row.action,
+                source=row.actor or row.resource_type or "system",
+                details=row.details or {},
+            )
+        )
 
+    # 3) Include synthetic events for triage + response metadata
+
+    # --- TRIAGE SUMMARY ---
+    events.insert(
+        0,
+        TimelineEntry(
+            timestamp=incident.timestamp,
+            event_type="triage_summary",
+            source="triage_agent",
+            details={
+                "threat_score": triage.get("threat_score"),
+                "threat_level": triage.get("threat_level"),
+                "decision": triage.get("decision"),
+                "confidence": triage.get("confidence"),
+                "recommended_actions": triage.get("recommended_actions") or triage.get("suggested_actions"),
+                "sigma_matches": triage.get("sigma_matches"),
+                "yara_matches": triage.get("yara_matches"),
+                "intel": triage.get("intel"),
+                "reasoning": triage.get("reasoning"),
+            },
+        ),
+    )
+
+    # --- RESPONSE SUMMARY ---
+    events.append(
+        TimelineEntry(
+            timestamp=datetime.utcnow().replace(tzinfo=timezone.utc),
+            event_type="response_summary",
+            source="response_agent",
+            details={
+                "response_strategy": incident.response_strategy,
+                "actions_planned": incident.actions_planned,
+                "actions_taken": incident.actions_taken,
+                "response_status": incident.response_status,
+            },
+        )
+    )
+
+    # 4) Sort again just in case
+    events = sorted(events, key=lambda x: x.timestamp)
+
+    # 5) Return final SOC-friendly timeline
     return IncidentTimeline(
         incident_id=incident_id,
         score=triage.get("threat_score") or triage.get("score"),
         threat_level=triage.get("threat_level"),
         decision=triage.get("decision"),
         recommended_actions=triage.get("recommended_actions") or triage.get("suggested_actions"),
-        events=events
+        events=events,
     )
+

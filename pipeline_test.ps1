@@ -53,6 +53,6 @@ docker compose logs --tail=20 | Select-String -Pattern "test" | Select-Object -L
 
 # 4. Check database for the test alert
 Write-Host "`n4. Checking Database for Test Alert..." -ForegroundColor Yellow
-docker compose exec postgres psql -U postgres -d ransomware_db -c "SELECT incident_id, severity, status, created_at FROM incidents ORDER BY created_at DESC LIMIT 3;"
+docker compose exec postgres psql -U ransomware_user -d ransomware_db -c "SELECT incident_id, severity, status, created_at FROM incidents ORDER BY created_at DESC LIMIT 3;"
 
 Write-Host "`n=== Test Complete ===" -ForegroundColor Cyan

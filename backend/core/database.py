@@ -126,13 +126,15 @@ async def wait_for_db(max_retries: int = 30, delay: float = 2.0) -> bool:
 
 # Base model shared by all services (example)
 from sqlalchemy import Column, String, DateTime, JSON
-from datetime import datetime
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 import uuid
+from datetime import datetime
 
 class IncidentBase(Base):
     __abstract__ = True
     
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    # Change from String to UUID type
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     siem_alert_id = Column(String, index=True)
     source = Column(String)
     raw_data = Column(JSON)

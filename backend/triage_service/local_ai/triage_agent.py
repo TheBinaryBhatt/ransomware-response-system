@@ -13,6 +13,7 @@ except Exception:
     LocalLLM = None  # will attempt lazy init in __init__
 
 from .prompt_templates import build_triage_prompt
+from .threat_intel import threat_intel_client
 
 # Existing integrations (you said these exist)
 from shared_lib.integrations.sigma_engine import sigma_engine
@@ -381,10 +382,16 @@ class TriageAgent:
         source_ip = incident.get("source_ip")
         file_hash = incident.get("file_hash")
         try:
-            intel = await self._gather_intel(source_ip, file_hash, file_path, file_bytes)
+            intel = await self._gather_intel(
+                source_ip=source_ip,
+                file_hash=file_hash,
+                file_path=file_path,
+                file_bytes=file_bytes,
+            )
         except Exception as e:
             logger.warning("Threat intel collection failed: %s", e)
             intel = {}
+        
 
         # redact verbose fields for logs
         redacted = {k: ("<redacted>" if k in ("virustotal", "abuseipdb") else v) for k, v in intel.items()}

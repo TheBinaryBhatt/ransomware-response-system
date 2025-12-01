@@ -44,9 +44,12 @@ class ResponseAgent:
             return None
 
     async def _query_malwarebazaar(self, file_hash: str) -> Optional[dict]:
-        if not file_hash:
+        if not file_hash or malwarebazaar_client is None:
             return None
         try:
+            if hasattr(malwarebazaar_client, "is_configured") and not malwarebazaar_client.is_configured():
+                logger.debug("MalwareBazaar not configured")
+                return None
             async with malwarebazaar_client:
                 return await malwarebazaar_client.query_hash(file_hash)
         except Exception as e:
@@ -180,19 +183,17 @@ class ResponseAgent:
             file_path = incident.get("file_path")
             data_b64 = incident.get("file_data_b64")
 
-            loop = asyncio.get_running_loop()
+            if file_path:
+                # Same usage as triage_agent: sync call
+                yara_matches = yara_analyzer.scan_file(file_path)
 
-            if file_path and yara_analyzer.rules_loaded():
-                yara_matches = await loop.run_in_executor(None, yara_analyzer.scan_file, file_path)
-
-            elif data_b64 and yara_analyzer.rules_loaded():
+            elif data_b64:
                 import base64
 
                 raw = base64.b64decode(data_b64)
-                yara_matches = await loop.run_in_executor(
-                    None,
-                    lambda: yara_analyzer.scan_data(raw, incident.get("incident_id", "unknown")),
-                )
+                # Same signature as triage_agent: one argument
+                yara_matches = yara_analyzer.scan_data(raw)
+
         except Exception as e:
             logger.exception("YARA scanning failed: %s", e)
 
@@ -225,10 +226,17 @@ class ResponseAgent:
             actions = []
             decision_text = "monitor"
 
+        abuse_conf = None
+        if isinstance(abuse_result, dict):
+            abuse_conf = (
+                abuse_result.get("confidence")
+                or abuse_result.get("abuseConfidenceScore")
+                or abuse_result.get("data", {}).get("abuseConfidenceScore")
+            )
+
         reasoning = (
             f"score={score}; sigma={len(sigma_matches)}; "
-            f"yara={len(yara_matches)}; "
-            f"abuse_conf={getattr(abuse_result,'get',lambda k,d: d)('confidence','N/A')}"
+            f"yara={len(yara_matches)}; abuse_conf={abuse_conf}"
         )
 
         return {

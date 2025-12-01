@@ -122,13 +122,37 @@ def quarantine_host(self, incident_id: str, agent_id: str):
             publish_event("response.quarantine.completed", {
                 "incident_id": incident_id,
                 "agent_id": agent_id,
-                "result": result
+                "result": result,
             })
+
+            # 🔐 AUDIT
+            try:
+                log_action.delay(
+                    action="quarantine_host",
+                    target=incident_id,
+                    status="success",
+                    resource_type="incident",
+                    details={"agent_id": agent_id, "result": result},
+                )
+            except Exception:
+                logger.exception("Failed to call audit log_action for quarantine_host")
 
             return {"incident_id": incident_id, "agent_id": agent_id, "result": result}
 
         except Exception as exc:
             logger.exception("Quarantine failed for %s: %s", agent_id, exc)
+            try:
+                # 🔐 AUDIT failure
+                log_action.delay(
+                    action="quarantine_host",
+                    target=incident_id,
+                    status="error",
+                    resource_type="incident",
+                    details={"agent_id": agent_id, "error": str(exc)},
+                )
+            except Exception:
+                logger.exception("Failed to call audit log_action for quarantine_host error")
+
             try:
                 raise self.retry(exc=exc)
             except self.MaxRetriesExceededError:
@@ -164,13 +188,36 @@ def block_ip(self, incident_id: str):
             publish_event("response.block_ip.completed", {
                 "incident_id": incident_id,
                 "ip": ip,
-                "result": result
+                "result": result,
             })
+
+            # 🔐 AUDIT
+            try:
+                log_action.delay(
+                    action="block_ip",
+                    target=incident_id,
+                    status="success",
+                    resource_type="incident",
+                    details={"ip": ip, "result": result},
+                )
+            except Exception:
+                logger.exception("Failed to call audit log_action for block_ip")
 
             return {"incident_id": incident_id, "ip": ip, "result": result}
 
         except Exception as exc:
             logger.exception("block_ip failed for %s: %s", ip, exc)
+            try:
+                log_action.delay(
+                    action="block_ip",
+                    target=incident_id,
+                    status="error",
+                    resource_type="incident",
+                    details={"ip": ip, "error": str(exc)},
+                )
+            except Exception:
+                logger.exception("Failed to call audit log_action for block_ip error")
+
             try:
                 raise self.retry(exc=exc)
             except self.MaxRetriesExceededError:
@@ -179,11 +226,12 @@ def block_ip(self, incident_id: str):
         db.close()
 
 
+
 @shared_task
 def escalate(incident_id: str):
     from .workflows.notify_soc import notify_soc
 
-    notify_soc(incident_id, severity="high")
+    result = notify_soc(incident_id, severity="high")
 
     db: Session = next(get_db())
     try:
@@ -199,8 +247,20 @@ def escalate(incident_id: str):
         db.close()
 
     publish_event("response.escalation.triggered", {"incident_id": incident_id})
-    return {"incident_id": incident_id}
 
+    # 🔐 AUDIT
+    try:
+        log_action.delay(
+            action="escalate",
+            target=incident_id,
+            status="success",
+            resource_type="incident",
+            details={"notify_result": result},
+        )
+    except Exception:
+        logger.exception("Failed to call audit log_action for escalate")
+
+    return {"incident_id": incident_id}
 
 
 
@@ -223,6 +283,19 @@ def collect_forensics(incident_id: str):
         db.close()
 
     publish_event("response.forensics.collected", result)
+
+    # 🔐 AUDIT
+    try:
+        log_action.delay(
+            action="collect_forensics",
+            target=incident_id,
+            status="success",
+            resource_type="incident",
+            details=result,
+        )
+    except Exception:
+        logger.exception("Failed to call audit log_action for collect_forensics")
+
     return {"incident_id": incident_id, "result": result}
 
 
@@ -361,4 +434,5 @@ def trigger_full_response(incident_id: str, agent_id: str):
     Schedules the entire response workflow.
     Returns Celery AsyncResult for execute_response_actions.
     """
-    return execute_response_actions.delay(incident_id)
+    return execute_response_actions.delay(incident_id, agent_id)
+

@@ -236,7 +236,7 @@ async def read_users_me(current_user: User = Depends(get_current_active_user)):
     return _serialize_user(current_user)
 
 
-analyst_or_admin = roles_required("admin", "analyst", "auditor", "viewer")
+analyst_or_admin = roles_required("admin", "analyst")
 
 
 @app.get("/api/v1/users", dependencies=[Depends(roles_required("admin"))])
@@ -357,14 +357,39 @@ async def siem_webhook(request: Request):
 @app.post("/api/v1/incidents/{incident_id}/respond")
 async def respond_to_incident(
     incident_id: str,
-    current_user: User = Depends(roles_required("admin")),
+    request: Request,
+    current_user: User = Depends(analyst_or_admin),
 ):
+    """
+    Gateway endpoint for triggering response workflow.
+
+    - Requires role: admin or analyst.
+    - Forwards Authorization header to response_service.
+    - Forwards JSON body if the frontend sends one, or sends {} if not.
+    """
+    # Forward the same Authorization header to the response service
+    auth_header = request.headers.get("Authorization")
+    headers = {}
+    if auth_header:
+        headers["Authorization"] = auth_header
+
+    # Try to forward the JSON body from the client; if no body, send empty dict
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
     async with httpx.AsyncClient() as client:
         try:
-            resp = await client.post(f"{RESPONSE_SERVICE}/api/v1/incidents/{incident_id}/respond")
+            resp = await client.post(
+                f"{RESPONSE_SERVICE}/api/v1/incidents/{incident_id}/respond",
+                headers=headers,
+                json=body,
+            )
             return resp.json()
         except httpx.RequestError:
             raise HTTPException(status_code=502, detail="Response service unavailable")
+
 
 
 # -------------------------------------------------

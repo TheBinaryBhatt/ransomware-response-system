@@ -5,6 +5,7 @@ from .local_ai.triage_agent import triage_agent
 from .models import TriageIncident
 from core.database import get_db
 from sqlalchemy.orm import Session
+from core.models import TriageIncident
 
 router = APIRouter()
 

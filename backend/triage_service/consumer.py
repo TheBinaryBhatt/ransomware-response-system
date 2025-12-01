@@ -7,7 +7,9 @@ from typing import Dict, Any
 
 from shared_lib.events.rabbitmq import start_consumer, publish_event
 from .local_ai.triage_agent import triage_agent  # your AI agent
-
+from core.models import TriageIncident
+from core.models import ResponseIncident
+from audit_service.local_ai.audit_agent import audit_agent
 logger = logging.getLogger(__name__)
 
 QUEUE_NAME = "triage.events"
@@ -101,6 +103,24 @@ async def _handle_event(routing_key: str, payload: Dict):
             await db.commit()
     except Exception as e:
         logger.exception("[Triage] Failed to save triage result to database: %s", e)
+    
+    # Record audit log for triage completion
+    try:
+        await audit_agent.record_action(
+            action="triage_completed",
+            target=str(incident_id),
+            status="success",
+            actor="triage_service",
+            resource_type="incident",
+            details={
+                "decision": result.get("decision"),
+                "threat_score": result.get("threat_score") or result.get("score"),
+                "threat_level": result.get("threat_level"),
+                "recommended_actions": result.get("recommended_actions") or result.get("actions"),
+            },
+        )
+    except Exception:
+        logger.warning("[Triage] Failed to record audit log", exc_info=True)
 
     # >>> Publish triage completion event with JSON-serializable body
     try:
