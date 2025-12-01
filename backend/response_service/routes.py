@@ -199,7 +199,7 @@ async def respond_to_incident(
             action="response_triggered",
             target=str(incident_id),
             status="initiated",
-            actor=user.get("username", "unknown"),
+            actor=user.username,
             resource_type="incident",
             details={
                 "automated": is_automated,
