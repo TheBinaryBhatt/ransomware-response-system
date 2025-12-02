@@ -10,6 +10,7 @@ from .local_ai.triage_agent import triage_agent  # your AI agent
 from core.models import TriageIncident
 from core.models import ResponseIncident
 from audit_service.local_ai.audit_agent import audit_agent
+import uuid
 logger = logging.getLogger(__name__)
 
 QUEUE_NAME = "triage.events"
@@ -40,7 +41,17 @@ async def _handle_event(routing_key: str, payload: Dict):
     """Async handler for triage logic."""
     logger.info("[Triage] Handling event %s -> %s", routing_key, payload)
 
-    incident_id = payload.get("incident_id")
+    incident_id_str = payload.get("incident_id")
+    if not incident_id_str:
+        logger.error("[Triage] Missing incident_id in payload")
+        return
+
+    # >>> CRITICAL FIX: Convert string to UUID for database query
+    try:
+        incident_id = uuid.UUID(str(incident_id_str))
+    except ValueError:
+        logger.error("[Triage] Invalid UUID format for incident_id: %s", incident_id_str)
+        return
 
     # >>> Run your triage agent here
     raw_result = await triage_agent.analyze_incident(payload)
@@ -72,7 +83,7 @@ async def _handle_event(routing_key: str, payload: Dict):
 
     try:
         async with AsyncSessionLocal() as db:
-            # Check if incident already exists
+            # Check if incident already exists - USING THE UUID OBJECT
             existing_stmt = await db.execute(
                 select(TriageIncident).where(TriageIncident.id == incident_id)
             )
@@ -88,15 +99,15 @@ async def _handle_event(routing_key: str, payload: Dict):
             else:
                 # Create new
                 triage_incident = TriageIncident(
-                    id=incident_id,
-                    siem_alert_id=payload.get("raw_data", {}).get("alert_id", "unknown"),
-                    source=payload.get("raw_data", {}).get("source", "unknown"),
-                    raw_data=payload.get("raw_data", {}),
-                    decision=result.get("decision"),
-                    confidence=float(result.get("confidence", 0.0) or 0.0),
-                    reasoning=result.get("reasoning", ""),
-                    status="triaged",
-                    actions=result.get("recommended_actions") or result.get("actions") or []
+                        id=incident_id,  # Only use 'id'
+                        # incident_id=incident_id,  <--- REMOVED THIS LINE
+                        source=payload.get("raw_data", {}).get("source", "unknown"),
+                        raw_data=payload.get("raw_data", {}),
+                        decision=result.get("decision"),
+                        confidence=float(result.get("confidence", 0.0) or 0.0),
+                        reasoning=result.get("reasoning", ""),
+                        status="triaged",
+                        actions=result.get("recommended_actions") or result.get("actions") or []
                 )
                 db.add(triage_incident)
 
@@ -104,6 +115,7 @@ async def _handle_event(routing_key: str, payload: Dict):
     except Exception as e:
         logger.exception("[Triage] Failed to save triage result to database: %s", e)
     
+    # ... rest of the function remains the same ...
     # Record audit log for triage completion
     try:
         await audit_agent.record_action(
@@ -125,7 +137,7 @@ async def _handle_event(routing_key: str, payload: Dict):
     # >>> Publish triage completion event with JSON-serializable body
     try:
         await publish_event("triage.completed", {
-            "incident_id": incident_id,
+            "incident_id": str(incident_id), # Convert back to string for JSON payload
             "triage_result": result,
         })
     except Exception:

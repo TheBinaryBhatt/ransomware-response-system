@@ -37,6 +37,13 @@ COPY alerting_service/ ./alerting_service/
 COPY audit_service/ ./audit_service/
 COPY gateway/ ./gateway/
 
+# NEW: copy root-level scripts
+COPY create_admin.py /app/
+COPY reset_admin_password.py /app/
+COPY reset_database.py /app/
+COPY init_db.py /app/
+COPY .env /app/
+
 RUN find . -type d -exec touch {}/__init__.py \;
 
 ENV PYTHONPATH="/app"

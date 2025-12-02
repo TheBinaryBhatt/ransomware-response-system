@@ -11,26 +11,30 @@ from core.security import get_password_hash
 from sqlalchemy import select
 
 async def reset_admin_password():
-    print("🔄 Resetting admin password...")
+    # Get arguments from command line, default to 'admin' / 'admin123' if not provided
+    target_username = sys.argv[1] if len(sys.argv) > 1 else "admin"
+    new_password = sys.argv[2] if len(sys.argv) > 2 else "admin123"
+
+    print(f"🔄 Resetting password for user '{target_username}'...")
     
     async for session in get_db():
-        # Find the admin user
-        result = await session.execute(select(User).where(User.username == "admin"))
+        # Find the user dynamically
+        result = await session.execute(select(User).where(User.username == target_username))
         user = result.scalar_one_or_none()
         
         if user:
-            # Reset the password
-            new_password_hash = get_password_hash("admin123")
+            # Reset the password using the argument
+            new_password_hash = get_password_hash(new_password)
             user.password_hash = new_password_hash
             session.add(user)
             await session.commit()
-            print(f"✅ Admin password reset successfully")
-            print(f"📧 Username: admin")
-            print(f"🔑 Password: admin123")
+            print(f"✅ Password reset successfully")
+            print(f"📧 Username: {target_username}")
+            print(f"🔑 Password: {new_password}")
             print(f"🔐 Password hash updated in database")
             return True
         else:
-            print("❌ Admin user not found")
+            print(f"❌ User '{target_username}' not found")
             return False
 
 if __name__ == "__main__":

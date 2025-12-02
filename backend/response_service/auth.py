@@ -7,6 +7,7 @@ from passlib.context import CryptContext
 from datetime import datetime, timedelta
 from core.config import settings
 import logging
+from core.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -91,10 +92,19 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any
         username: Optional[str] = payload.get("sub")
         if username is None:
             raise credentials_exception
+        
+        # FIX: Get user from fake database
         user = fake_user_db.get(username)
         if user is None:
             raise credentials_exception
+            
+        # FIX: Return the full user dict including username
+        return {
+            "username": user.get("username"),
+            "role": user.get("role"),
+            "id": username  # Use username as ID if no UUID
+        }
+        
     except JWTError as e:
         logger.debug("JWT decode error: %s", e)
         raise credentials_exception
-    return user

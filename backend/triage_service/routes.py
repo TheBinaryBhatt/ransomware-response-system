@@ -4,30 +4,50 @@ from fastapi import APIRouter, HTTPException
 from .local_ai.triage_agent import triage_agent
 from .models import TriageIncident
 from core.database import get_db
-from sqlalchemy.orm import Session
-from core.models import TriageIncident
-
+import uuid
 router = APIRouter()
+
 
 @router.post("/analyze")
 async def analyze_incident(payload: dict):
     """
-    Compatibility endpoint.
-    Allows ingestion service or manual requests to trigger AI triage.
+    Unified triage endpoint with guaranteed fallback.
+    Ensures triage_agent receives a normalized incident dict.
     """
     try:
         incident_id = payload.get("incident_id")
         if not incident_id:
             raise ValueError("Missing incident_id in payload")
 
-        # Run AI analysis
-        result = await triage_agent.analyze_incident(payload)
+        # Normalize payload for triage_agent
+        incident = {
+            "id": incident_id,
+            "source_ip": payload.get("source_ip"),
+            "file_hash": payload.get("file_hash"),
+            "file_path": payload.get("file_path"),
+            "file_bytes": payload.get("file_bytes"),
+            "severity": payload.get("severity", "high"),
+            "description": payload.get("description", ""),
+        }
 
-        # Sync DB session (works inside async route since DB engine is async)
-        db: Session = next(get_db())
-        TriageIncident.store_result(db, incident_id, result)
+        # Always returns a valid result (LLM optional)
+        result = await triage_agent.analyze_incident(incident)
+
+        # <--- 2. CONVERT STRING TO UUID OBJECT HERE --->
+        try:
+            incident_uuid = uuid.UUID(incident_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+        # Correct async DB write
+        async for db in get_db():
+            # Pass the UUID object, not the string
+            await TriageIncident.store_result(db, incident_uuid, result) 
+            break
 
         return {"status": "ok", "result": result}
 
     except Exception as e:
+        # Log the error for debugging
+        print(f"Error in analyze_incident: {e}") 
         raise HTTPException(status_code=500, detail=str(e))

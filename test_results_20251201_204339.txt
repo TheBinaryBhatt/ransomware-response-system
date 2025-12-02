@@ -1,0 +1,18 @@
+﻿Ransomware Response System - Test Results
+==========================================
+Test Date: 2025-12-01 20:43:39
+Incident ID: a911b198-68b4-4896-8481-c9f052f1d225
+User: admin
+Task ID: 
+Duration: 2.91 seconds
+
+Services Tested:
+- Gateway: Healthy
+- Ingestion: Healthy
+- Triage: Not tested
+- Response: Working
+- Audit: Healthy
+- Celery: Running
+- RabbitMQ: Accessible
+
+Timeline Events: N/A

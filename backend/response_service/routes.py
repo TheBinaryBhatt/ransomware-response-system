@@ -149,18 +149,18 @@ async def respond_to_incident(
 
 ):
     # Enforce that only analysts/admins can trigger responses
-    role = user.role
+    role = user.get("role")
     if role not in ("analyst", "admin"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only analysts or admins can trigger automated responses",
-        )
+    )
     data = await request.json()
     is_automated = data.get("automated", False)
 
     triage_result_raw = data.get("triage_result")
     analysis = data.get("analysis", {}) or {}
-    agent_id = analysis.get("agent_id") or user.username
+    agent_id = analysis.get("agent_id") or user.get("username")
 
     # Fetch incident
     result = await db.execute(
@@ -211,28 +211,33 @@ async def respond_to_incident(
         # We don't block the response on audit failure
         pass
 
-    # Trigger playbook async
+    # Trigger Celery workflow
     async_result = execute_response_actions.delay(incident_id, agent_id)
 
-    # Store Celery task id on the incident so /workflows/{incident_id}/status works
     incident.current_task_id = async_result.id
     incident.updated_at = datetime.utcnow()
 
     try:
         await db.commit()
-    except Exception:
+        await db.refresh(incident)
+    except Exception as e:
         await db.rollback()
-        # Do NOT fail the whole call just because saving task_id failed
-        # We still return that the workflow was triggered
-        pass
+        # Still return task_id even if DB update failed
+        return {
+            "status": "workflow_triggered",
+            "incident_id": incident_id,
+            "task_id": async_result.id,
+            "warning": f"Task triggered but DB update failed: {e}",
+        }
 
     return {
         "status": "workflow_triggered",
         "incident_id": incident_id,
         "task_id": async_result.id,
         "triage_ingested": bool(triage_model),
-        "triggered_by": "AI agent" if is_automated else agent_id
+        "triggered_by": agent_id,
     }
+
 
 
 # ---------------------------
@@ -362,7 +367,7 @@ async def get_incident_timeline(
     audit_rows = await db.execute(
         select(AuditLog)
         .where(AuditLog.target == incident_id)
-        .order_by(AuditLog.timestamp.asc())
+        .order_by(AuditLog.created_at.asc())
     )
     audit_logs = audit_rows.scalars().all()
 
