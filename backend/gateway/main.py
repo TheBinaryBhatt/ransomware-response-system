@@ -41,7 +41,30 @@ logger = logging.getLogger(__name__)
 # -------------------------------------------------
 # FastAPI + Socket.IO shared ASGI app
 # -------------------------------------------------
-app = FastAPI(title="API Gateway", version="1.0.0")
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info("🚀 Starting API Gateway...")
+    if not await wait_for_db_connection():
+        logger.error("[gateway] Database connection failed on startup")
+    if not await wait_for_rabbitmq_connection():
+        logger.warning("[gateway] RabbitMQ connection failed on startup")
+    try:
+        await start_event_bridge(handle_domain_event)
+        logger.info("[gateway] Event bridge started")
+    except Exception:
+        logger.exception("[gateway] Event bridge init failed")
+    yield  # App runs here
+    # Shutdown
+    logger.info("[gateway] Shutting down event bridge")
+    try:
+        await stop_event_bridge()
+    except Exception:
+        logger.exception("[gateway] Error stopping event bridge")
+
+app = FastAPI(title="API Gateway", version="1.0.0", lifespan=lifespan)
 
 sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
 socket_app: Any = socketio.ASGIApp(sio, other_asgi_app=app)
@@ -156,39 +179,6 @@ async def wait_for_rabbitmq_connection(max_retries: int = 30, delay: float = 2.0
 
 
 # -------------------------------------------------
-# Startup / Shutdown - UPDATED with retry logic
-# -------------------------------------------------
-@app.on_event("startup")
-async def startup_event():
-    logger.info("🚀 Starting API Gateway...")
-
-    # Wait for database with retry logic
-    if not await wait_for_db_connection():
-        logger.error("[gateway] Database connection failed on startup")
-        # Don't exit - let the service continue and retry connections
-
-    # Wait for RabbitMQ with retry logic  
-    if not await wait_for_rabbitmq_connection():
-        logger.warning("[gateway] RabbitMQ connection failed on startup")
-
-    try:
-        await start_event_bridge(handle_domain_event)
-        logger.info("[gateway] Event bridge started")
-    except Exception:
-        logger.exception("[gateway] Event bridge init failed")
-        # Don't exit - let the service continue without event bridge
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    logger.info("[gateway] Shutting down event bridge")
-    try:
-        await stop_event_bridge()
-    except Exception:
-        logger.exception("[gateway] Error stopping event bridge")
-
-
-# -------------------------------------------------
 # Authentication
 # -------------------------------------------------
 @app.post("/token")
@@ -204,42 +194,32 @@ async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        logger.info(f"Login attempt for user: {form_data.username}")
-        
-        # Execute query
-        result = await db.execute(select(User).where(User.username == form_data.username))
-        user = result.scalar_one_or_none()
+    # 1. Fetch User
+    result = await db.execute(select(User).where(User.username == form_data.username))
+    user = result.scalar_one_or_none()
 
-        if not user:
-            logger.warning(f"Login failed: User {form_data.username} not found")
-            publish_event("security.login.failure", {"username": form_data.username})
-            raise HTTPException(status_code=400, detail="Incorrect username or password")
+    # 2. Check User existence
+    if not user:
+        print(f"[Auth Debug] User {form_data.username} not found")
+        raise HTTPException(status_code=400, detail="Incorrect username or password")
 
-        # Verify password
-        if not verify_password(form_data.password, user.password_hash):
-            logger.warning(f"Login failed: Invalid password for user {form_data.username}")
-            publish_event("security.login.failure", {"username": form_data.username})
-            raise HTTPException(status_code=400, detail="Incorrect username or password")
+    # 3. Verify Password
+    is_valid = verify_password(form_data.password, user.password_hash)
+    if not is_valid:
+        print(f"[Auth Debug] Password mismatch for {form_data.username}")
+        # Debug helper: print hashes (remove in production!)
+        # print(f"Stored: {user.password_hash} vs Input: {form_data.password}") 
+        raise HTTPException(status_code=400, detail="Incorrect username or password")
 
-        if not user.is_active:
-            logger.warning(f"Login failed: User {form_data.username} is inactive")
-            raise HTTPException(status_code=400, detail="Inactive user")
+    if not user.is_active:
+        raise HTTPException(status_code=400, detail="Inactive user")
 
-        access_token = create_access_token(
-            data={"sub": user.username, "role": user.role},
-            expires_delta=timedelta(minutes=30),
-        )
-
-        publish_event("security.login.success", {"username": user.username})
-        logger.info(f"Login successful for user: {form_data.username}")
-        return {"access_token": access_token, "token_type": "bearer"}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"[gateway] Unexpected login error: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    # 4. Generate Token
+    access_token = create_access_token(
+        data={"sub": user.username, "role": user.role},
+        expires_delta=timedelta(minutes=30),
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
 
 
 # -------------------------------------------------
@@ -402,6 +382,27 @@ async def respond_to_incident(
             raise HTTPException(status_code=502, detail="Response service unavailable")
 
 
+# ADD: Timeline proxy
+@app.get("/api/v1/incidents/{incident_id}/timeline")
+async def proxy_timeline(
+    incident_id: str,
+    request: Request,
+    current_user: User = Depends(analyst_or_admin),
+):
+    auth_header = request.headers.get("Authorization")
+    headers = {}
+    if auth_header:
+        headers["Authorization"] = auth_header
+
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.get(
+                f"{RESPONSE_SERVICE}/api/v1/incidents/{incident_id}/timeline",
+                headers=headers,
+            )
+            return resp.json()
+        except httpx.RequestError:
+            raise HTTPException(status_code=502, detail="Timeline service unavailable")
 
 
 # -------------------------------------------------

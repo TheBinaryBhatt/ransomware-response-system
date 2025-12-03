@@ -9,6 +9,7 @@ WORKDIR /app
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
   gcc g++ build-essential cmake curl libssl-dev \
+  && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 
 # -----------------------------
@@ -50,8 +51,6 @@ ENV PYTHONPATH="/app"
 
 EXPOSE 8000 8001 8002 8003 8004
 
-CMD ["python", "-m", "gateway.main"]
-
 # Create required directories
 RUN mkdir -p /app/sigma_rules \
   /app/triage_service/models \
@@ -61,3 +60,12 @@ RUN mkdir -p /app/sigma_rules \
 RUN touch /app/sigma_rules/.gitkeep \
   /app/triage_service/models/.gitkeep \
   /app/shared_lib/integrations/yara_rules/.gitkeep
+
+# ADD: Non-root user for security (e.g., Celery) - FIXED for Debian
+RUN adduser --disabled-password --gecos "" celery && chown -R celery:celery /app
+USER celery
+
+# ADD: Volume for models (if not mounted in compose)
+VOLUME ["/app/triage_service/models"]
+
+CMD ["python", "-m", "gateway.main"]

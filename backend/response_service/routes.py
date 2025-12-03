@@ -8,7 +8,7 @@ from sqlalchemy import select
 from typing import List, Optional
 from pydantic import BaseModel, Field, ValidationError
 from core.database import get_db
-from core.models import ResponseIncident
+from core.models import ResponseIncident, AuditLog
 from shared_lib.integrations.abuseipdb_client import abuseipdb_client
 from shared_lib.integrations.malwarebazaar_client import malwarebazaar_client
 from shared_lib.integrations.virustotal_client import virustotal_client
@@ -20,7 +20,6 @@ from .auth import authenticate_user, create_access_token, get_current_user
 from .tasks import execute_response_actions
 
 from .schemas.timeline import IncidentTimeline, TimelineEntry
-from audit_service.models import AuditLog
 from audit_service.local_ai.audit_agent import audit_agent
 
 from datetime import datetime, timezone
@@ -154,7 +153,7 @@ async def respond_to_incident(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only analysts or admins can trigger automated responses",
-    )
+        )
     data = await request.json()
     is_automated = data.get("automated", False)
 
@@ -193,13 +192,13 @@ async def respond_to_incident(
         await db.rollback()
         raise HTTPException(500, "Failed to persist incident before triggering response")
 
-    # Record audit log for response trigger
+    # Record audit log for response trigger - FIX: Use 'target' field
     try:
         await audit_agent.record_action(
             action="response_triggered",
             target=str(incident_id),
             status="initiated",
-            actor=user.username,
+            actor=user.get("username", "unknown"),
             resource_type="incident",
             details={
                 "automated": is_automated,
@@ -363,10 +362,10 @@ async def get_incident_timeline(
     triage = incident.triage_result or {}
     analysis = incident.analysis or {}
 
-    # 2) Load audit logs
+    # 2) Load audit logs - FIX: Use 'target' column
     audit_rows = await db.execute(
         select(AuditLog)
-        .where(AuditLog.target == incident_id)
+        .where(AuditLog.target == incident_id)  # Now exists
         .order_by(AuditLog.created_at.asc())
     )
     audit_logs = audit_rows.scalars().all()
@@ -376,9 +375,9 @@ async def get_incident_timeline(
     for row in audit_logs:
         events.append(
             TimelineEntry(
-                timestamp=row.timestamp,
-                event_type=row.action,
-                source=row.actor or row.resource_type or "system",
+                timestamp=row.created_at,  # Alias works
+                event_type=row.action,  # Corrected column name
+                source=row.actor,  # Corrected column name
                 details=row.details or {},
             )
         )
@@ -433,4 +432,3 @@ async def get_incident_timeline(
         recommended_actions=triage.get("recommended_actions") or triage.get("suggested_actions"),
         events=events,
     )
-

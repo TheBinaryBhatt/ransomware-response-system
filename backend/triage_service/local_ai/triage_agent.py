@@ -2,6 +2,7 @@
 import json
 import logging
 import asyncio
+import os  # ADD: For env path
 from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -59,8 +60,9 @@ class TriageAgent:
         self.llm = None
         if LocalLLM is not None:
             try:
-                # instantiate might be expensive; keep simple
-                self.llm = LocalLLM()
+                # instantiate might be expensive; keep simple - USE ENV PATH
+                model_path = os.getenv("AI_MODEL_PATH", "/app/triage_service/models/hermes-2-pro-mistral-7b.Q8_0.gguf")
+                self.llm = LocalLLM(model_path=model_path)
             except Exception as e:
                 logger.warning("LocalLLM init failed, continuing without LLM: %s", e)
                 self.llm = None

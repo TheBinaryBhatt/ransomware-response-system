@@ -84,8 +84,12 @@ try {
         -UseBasicParsing
 
     $responseData = $ingestionResult.Content | ConvertFrom-Json
-    $IncidentID = $responseData.incident_id   # <-- FIX added here
-
+    $IncidentID = $responseData.incident_id  # Ensure captured
+    
+    if (-not $IncidentID) {
+        Write-Host "  ERROR: No incident_id returned" -ForegroundColor Red
+        exit 1
+    }
     Write-Host "  Incident created successfully" -ForegroundColor Green
     Write-Host "  Incident ID: $IncidentID" -ForegroundColor Gray
 }
@@ -102,6 +106,10 @@ catch {
         $responseData = $ingestionResult.Content | ConvertFrom-Json
         $IncidentID = $responseData.incident_id   # <-- FIX added here
 
+        if (-not $IncidentID) {
+            Write-Host "  ERROR: No incident_id returned from gateway" -ForegroundColor Red
+            exit 1
+        }
         Write-Host "  Incident created via gateway proxy" -ForegroundColor Green
         Write-Host "  Incident ID: $IncidentID" -ForegroundColor Gray
     }
@@ -110,8 +118,6 @@ catch {
         exit 1
     }
 }
-
-
 
 # ==============================================
 # PHASE 2: AUTHENTICATION
@@ -180,7 +186,7 @@ Write-Host "`nPHASE 3: TRIAGE TEST" -ForegroundColor Magenta
 Write-Host "==============================================" -ForegroundColor Magenta
 
 $triageBody = @{
-    incident_id = $IncidentID
+    incident_id = $IncidentID  # ADD: Include ID
     source_ip = "8.8.8.8"
     file_hash = "44d88612fea8a8f36de82e1278abb02f"
     alert_type = "ransomware_detected"
@@ -192,29 +198,40 @@ $triageEndpoints = @(
     "/api/v1/analyze"
 )
 
-
 $triageSuccess = $false
 foreach ($endpoint in $triageEndpoints) {
     Write-Host "  Trying endpoint: $endpoint" -ForegroundColor Gray
     
-    try {
-        $triageResult = Invoke-WebRequest -Uri "http://localhost:8002$endpoint" `
-            -Method POST `
-            -ContentType "application/json" `
-            -Body $triageBody `
-            -TimeoutSec 5 `
-            -UseBasicParsing
-        
-        $triageData = $triageResult.Content | ConvertFrom-Json
-        Write-Host "  Triage successful via $endpoint" -ForegroundColor Green
-        Write-Host "    Decision: $($triageData.decision)" -ForegroundColor Gray
-        Write-Host "    Threat Score: $($triageData.threat_score)" -ForegroundColor Gray
-        Write-Host "    Confidence: $($triageData.confidence)" -ForegroundColor Gray
-        $triageSuccess = $true
-        break
-    } catch {
-        # Continue to next endpoint
+    # ADD: Retry loop for async lag
+    $retryCount = 0
+    $maxRetries = 3
+    while ($retryCount -lt $maxRetries) {
+        try {
+            $triageResult = Invoke-WebRequest -Uri "http://localhost:8002$endpoint" `
+                -Method POST `
+                -ContentType "application/json" `
+                -Body $triageBody `
+                -TimeoutSec 10 `
+                -UseBasicParsing
+            
+            $triageData = $triageResult.Content | ConvertFrom-Json
+            Write-Host "  Triage successful via $endpoint" -ForegroundColor Green
+           # Fixed for PowerShell 5.1 compatibility
+            $decision = if ($triageData.result.decision) { $triageData.result.decision } else { 'N/A' }
+            $score = if ($triageData.result.threat_score) { $triageData.result.threat_score } else { 'N/A' }
+            $conf = if ($triageData.result.confidence) { $triageData.result.confidence } else { 'N/A' }
+                    
+            Write-Host "    Decision: $decision" -ForegroundColor Gray
+            Write-Host "    Threat Score: $score" -ForegroundColor Gray
+            Write-Host "    Confidence: $conf" -ForegroundColor Gray
+            break
+        } catch {
+            $retryCount++
+            Write-Host "  Retry $retryCount/$maxRetries failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            if ($retryCount -lt $maxRetries) { Start-Sleep 3 }
+        }
     }
+    if ($triageSuccess) { break }
 }
 
 if (-not $triageSuccess) {

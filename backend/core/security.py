@@ -21,11 +21,10 @@ security = HTTPBearer()
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its hash"""
     try:
         return pwd_context.verify(plain_password, hashed_password)
-    except Exception as e:
-        logger.error(f"Password verification error: {e}") # Changed to error for visibility
+    except Exception:
+        logger.warning("Password verification failed (hash mismatch or invalid format)")
         return False
 
 

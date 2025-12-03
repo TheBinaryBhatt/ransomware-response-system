@@ -1,15 +1,16 @@
 # backend/triage_service/routes.py
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from .local_ai.triage_agent import triage_agent
-from .models import TriageIncident
+from core.models import TriageIncident
 from core.database import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
 router = APIRouter()
 
 
 @router.post("/analyze")
-async def analyze_incident(payload: dict):
+async def analyze_incident(payload: dict, db: AsyncSession = Depends(get_db)):
     """
     Unified triage endpoint with guaranteed fallback.
     Ensures triage_agent receives a normalized incident dict.
@@ -33,17 +34,14 @@ async def analyze_incident(payload: dict):
         # Always returns a valid result (LLM optional)
         result = await triage_agent.analyze_incident(incident)
 
-        # <--- 2. CONVERT STRING TO UUID OBJECT HERE --->
+        # CONVERT STRING TO UUID OBJECT
         try:
             incident_uuid = uuid.UUID(incident_id)
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid UUID format")
 
-        # Correct async DB write
-        async for db in get_db():
-            # Pass the UUID object, not the string
-            await TriageIncident.store_result(db, incident_uuid, result) 
-            break
+        # Correct async DB write - Use Depends for async session
+        await TriageIncident.store_result(db, incident_uuid, result)
 
         return {"status": "ok", "result": result}
 
