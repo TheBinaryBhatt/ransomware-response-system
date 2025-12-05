@@ -4,7 +4,7 @@
 
 import { io, Socket } from 'socket.io-client';
 import { WS_URL, WS_EVENTS } from '../utils/constants';
-import type { WebSocketEvent, WebSocketEventType } from '../types';
+import type { WebSocketEventType } from '../types';
 
 class WebSocketService {
     private socket: Socket | null = null;

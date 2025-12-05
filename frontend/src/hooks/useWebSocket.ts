@@ -9,7 +9,6 @@ import type { WebSocketEventType } from '../types';
 interface UseWebSocketOptions {
     onConnect?: () => void;
     onDisconnect?: () => void;
-    onError?: (error: any) => void;
     autoConnect?: boolean;
 }
 

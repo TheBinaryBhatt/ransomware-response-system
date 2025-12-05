@@ -3,7 +3,7 @@
 // ============================================
 
 import React from 'react';
-import { CheckCircle, AlertCircle, Clock, Loader2 } from 'lucide-react';
+import { CheckCircle, AlertCircle, Clock, Loader2, AlertTriangle } from 'lucide-react';
 import type { WorkflowExecution, WorkflowAction } from '../../types/workflow';
 
 interface ExecutionTimelineProps {
@@ -13,6 +13,7 @@ interface ExecutionTimelineProps {
 const statusConfig = {
     success: { color: 'text-green-400', bgColor: 'bg-green-500/10', borderColor: 'border-green-500/30', icon: CheckCircle },
     failed: { color: 'text-red-400', bgColor: 'bg-red-500/10', borderColor: 'border-red-500/30', icon: AlertCircle },
+    partial: { color: 'text-yellow-400', bgColor: 'bg-yellow-500/10', borderColor: 'border-yellow-500/30', icon: AlertTriangle },
     running: { color: 'text-accent-teal', bgColor: 'bg-accent-teal/10', borderColor: 'border-accent-teal/30', icon: Loader2 },
     pending: { color: 'text-text-secondary', bgColor: 'bg-dark-bg', borderColor: 'border-accent-teal/10', icon: Clock },
 };
@@ -69,8 +70,8 @@ const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({ execution }) => {
                 <div className="h-2 bg-dark-bg rounded-full overflow-hidden">
                     <div
                         className={`h-full rounded-full transition-all duration-500 ${execution.status === 'success' ? 'bg-green-500' :
-                                execution.status === 'failed' ? 'bg-red-500' :
-                                    'bg-accent-teal'
+                            execution.status === 'failed' ? 'bg-red-500' :
+                                'bg-accent-teal'
                             }`}
                         style={{ width: `${progressPercent}%` }}
                     />

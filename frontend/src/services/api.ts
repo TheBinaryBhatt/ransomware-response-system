@@ -19,8 +19,6 @@ import type {
     Incident,
     Workflow,
     AuditLog,
-    ThreatIntelIP,
-    ThreatIntelHash,
     Integration,
     SystemHealth,
     DashboardStats,
@@ -158,14 +156,25 @@ export const dashboardApi = {
 // THREAT INTEL API
 // ============================================
 
+import type {
+    IPReputation,
+    FileHash,
+} from '../types/threatintel';
+
+// ... (existing imports)
+
+// ============================================
+// THREAT INTEL API
+// ============================================
+
 export const threatIntelApi = {
-    lookupIP: async (ip: string): Promise<ThreatIntelIP> => {
-        const response = await axiosInstance.get<ThreatIntelIP>(`/api/v1/threat-intel/ip/${ip}`);
+    lookupIP: async (ip: string): Promise<IPReputation> => {
+        const response = await axiosInstance.get<IPReputation>(`/api/v1/threat-intel/ip/${ip}`);
         return response.data;
     },
 
-    lookupHash: async (hash: string): Promise<ThreatIntelHash> => {
-        const response = await axiosInstance.get<ThreatIntelHash>(`/api/v1/threat-intel/hash/${hash}`);
+    lookupHash: async (hash: string): Promise<FileHash> => {
+        const response = await axiosInstance.get<FileHash>(`/api/v1/threat-intel/hash/${hash}`);
         return response.data;
     },
 

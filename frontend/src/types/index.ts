@@ -10,6 +10,7 @@ export interface User {
     is_active: boolean;
     is_superuser: boolean;
     created_at: string;
+    full_name?: string;
 }
 
 export interface Incident {

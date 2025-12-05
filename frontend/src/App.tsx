@@ -6,7 +6,7 @@ import AppLayout from './components/Layout/AppLayout';
 import Dashboard from './components/Dashboard';
 import Login from './components/Login';
 import NotificationCenter from './components/Common/NotificationCenter';
-import { IncidentsPage, ThreatIntelPage, WorkflowsPage, AuditLogsPage } from './pages';
+import { IncidentsPage, ThreatIntelPage, WorkflowsPage, AuditLogsPage, SettingsPage } from './pages';
 
 function App() {
     return (
@@ -55,7 +55,7 @@ function AppContent() {
                                 <Route path="/incidents" element={<IncidentsPage />} />
                                 <Route path="/workflows" element={<WorkflowsPage />} />
                                 <Route path="/audit-logs" element={<AuditLogsPage />} />
-                                <Route path="/settings" element={<PlaceholderPage title="Settings" />} />
+                                <Route path="/settings" element={<SettingsPage />} />
                             </Routes>
                         </AppLayout>
                     ) : (
@@ -67,20 +67,7 @@ function AppContent() {
     );
 }
 
-// Placeholder page component for testing navigation
-const PlaceholderPage: React.FC<{ title: string }> = ({ title }) => (
-    <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
-        <div className="text-center">
-            <h1 className="text-4xl font-bold text-text-primary mb-4">{title}</h1>
-            <p className="text-text-secondary">This page is under construction</p>
-            <div className="mt-8 p-6 bg-dark-surface rounded-lg border border-accent-teal/20">
-                <p className="text-sm text-text-secondary">
-                    Navigate using the sidebar to test the navigation system
-                </p>
-            </div>
-        </div>
-    </div>
-);
+
 
 export default App;
 

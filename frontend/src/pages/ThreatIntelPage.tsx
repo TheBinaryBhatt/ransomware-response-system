@@ -36,8 +36,10 @@ const ThreatIntelPage: React.FC = () => {
                 { type: 'ip', query: ip, timestamp: new Date() },
                 ...prev.slice(0, 9)
             ]);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('IP lookup failed:', err);
+            const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+            setError(errorMessage);
 
             // Create mock data for demonstration if API fails
             const mockData: IPReputation = {
@@ -80,8 +82,10 @@ const ThreatIntelPage: React.FC = () => {
                 { type: 'hash', query: hash, timestamp: new Date() },
                 ...prev.slice(0, 9)
             ]);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Hash lookup failed:', err);
+            const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+            setError(errorMessage);
 
             // Create mock data for demonstration if API fails
             const isEicar = hash.toLowerCase().includes('44d88612');
@@ -160,8 +164,8 @@ const ThreatIntelPage: React.FC = () => {
                         <button
                             onClick={() => handleTabChange('ip')}
                             className={`flex items-center gap-2 px-6 py-3 rounded-t-lg font-semibold transition-all ${activeTab === 'ip'
-                                    ? 'bg-dark-bg text-accent-teal border border-accent-teal/30 border-b-0'
-                                    : 'text-text-secondary hover:text-text-primary hover:bg-dark-bg/50'
+                                ? 'bg-dark-bg text-accent-teal border border-accent-teal/30 border-b-0'
+                                : 'text-text-secondary hover:text-text-primary hover:bg-dark-bg/50'
                                 }`}
                         >
                             <Globe size={18} />
@@ -170,8 +174,8 @@ const ThreatIntelPage: React.FC = () => {
                         <button
                             onClick={() => handleTabChange('hash')}
                             className={`flex items-center gap-2 px-6 py-3 rounded-t-lg font-semibold transition-all ${activeTab === 'hash'
-                                    ? 'bg-dark-bg text-purple-400 border border-purple-500/30 border-b-0'
-                                    : 'text-text-secondary hover:text-text-primary hover:bg-dark-bg/50'
+                                ? 'bg-dark-bg text-purple-400 border border-purple-500/30 border-b-0'
+                                : 'text-text-secondary hover:text-text-primary hover:bg-dark-bg/50'
                                 }`}
                         >
                             <FileSearch size={18} />
@@ -258,8 +262,8 @@ const ThreatIntelPage: React.FC = () => {
                                         }
                                     }}
                                     className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-all ${item.type === 'ip'
-                                            ? 'bg-accent-teal/10 hover:bg-accent-teal/20 text-accent-teal border border-accent-teal/20'
-                                            : 'bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20'
+                                        ? 'bg-accent-teal/10 hover:bg-accent-teal/20 text-accent-teal border border-accent-teal/20'
+                                        : 'bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20'
                                         }`}
                                 >
                                     {item.type === 'ip' ? <Globe size={12} /> : <FileSearch size={12} />}
