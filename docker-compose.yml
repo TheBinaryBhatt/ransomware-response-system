@@ -11,7 +11,7 @@ services:
       POSTGRES_PASSWORD: supersecretpassword
       POSTGRES_DB: ransomware_db
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -69,7 +69,6 @@ services:
     container_name: backend-base-build
     environment:
       - PYTHONUNBUFFERED=1
-    # Remove command and ports - this should just build the image, not run as a service
     networks:
       - app-network
 
@@ -98,9 +97,9 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
-    user: "1000:1000"  # Non-root user
+    user: "1000:1000"
     volumes:
-      - ./backend/triage_service/models:/app/triage_service/models:ro  # For LLM model
+      - ./backend/triage_service/models:/app/triage_service/models:ro
     networks:
       - app-network
 
@@ -183,7 +182,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     volumes:
-      - ./backend/triage_service/models:/app/triage_service/models:ro  # For LLM
+      - ./backend/triage_service/models:/app/triage_service/models:ro
     networks:
       - app-network
 

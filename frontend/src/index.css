@@ -1,46 +1,71 @@
-/* src/index.css */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-/* Dark Theme Variables */
-:root {
-  --dark-bg: #111827;
-  --dark-surface: #1f2937;
-  --dark-border: #374151;
-  --text-primary: #f9fafb;
-  --text-secondary: #9ca3af;
-  --accent-teal: #14b8a6;
-}
+/* RRS Design System - Global Styles */
 
 * {
+  box-sizing: border-box;
   margin: 0;
   padding: 0;
-  box-sizing: border-box;
 }
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-  background-color: var(--dark-bg);
-  color: var(--text-primary);
-  overflow: hidden;
+  background-color: #1F2121;
+  color: #FCFCF9;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Scrollbar Styling */
+/* Monospace font for technical data */
+.font-mono {
+  font-family: 'Fira Code', 'JetBrains Mono', Consolas, monospace;
+  font-variant-ligatures: none;
+}
+
+/* Glassmorphism utility */
+.glass {
+  background: rgba(37, 39, 39, 0.8);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(58, 60, 60, 0.5);
+}
+
+/* Scrollbar styling for dark theme */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--dark-surface);
+  background: #1F2121;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--dark-border);
+  background: #3A3C3C;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--accent-teal);
+  background: #32B8C6;
+}
+
+/* Hide default number spinners */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Focus visible for accessibility */
+*:focus-visible {
+  outline: 2px solid #32B8C6;
+  outline-offset: 2px;
+}
+
+/* Selection color */
+::selection {
+  background-color: rgba(50, 184, 198, 0.3);
+  color: #FCFCF9;
 }

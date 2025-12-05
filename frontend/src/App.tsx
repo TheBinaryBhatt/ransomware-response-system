@@ -1,47 +1,86 @@
-// src/App.tsx
-import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import Sidebar from './components/Sidebar';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { IncidentProvider } from './contexts/IncidentContext';
+import { NotificationProvider } from './contexts/NotificationContext';
+import AppLayout from './components/Layout/AppLayout';
 import Dashboard from './components/Dashboard';
 import Login from './components/Login';
+import NotificationCenter from './components/Common/NotificationCenter';
+import { IncidentsPage, ThreatIntelPage, WorkflowsPage, AuditLogsPage } from './pages';
 
 function App() {
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
-
-    useEffect(() => {
-        // Check if user has JWT token
-        const token = localStorage.getItem('token');
-        setIsAuthenticated(!!token);
-    }, []);
-
-    if (!isAuthenticated) {
-        return (
-            <BrowserRouter>
-                <Routes>
-                    <Route path="/login" element={<Login onLogin={() => setIsAuthenticated(true)} />} />
-                    <Route path="*" element={<Navigate to="/login" replace />} />
-                </Routes>
-            </BrowserRouter>
-        );
-    }
-
     return (
         <BrowserRouter>
-            <div className="flex h-screen bg-gray-900">
-                {/* Sidebar - Fixed Width */}
-                <Sidebar onLogout={() => setIsAuthenticated(false)} />
-
-                {/* Main Content - Takes Remaining Space */}
-                <main className="flex-1 overflow-auto bg-gray-900">
-                    <Routes>
-                        <Route path="/" element={<Dashboard />} />
-                        <Route path="/dashboard" element={<Dashboard />} />
-                        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-                    </Routes>
-                </main>
-            </div>
+            <AuthProvider>
+                <IncidentProvider>
+                    <NotificationProvider>
+                        <NotificationCenter />
+                        <AppContent />
+                    </NotificationProvider>
+                </IncidentProvider>
+            </AuthProvider>
         </BrowserRouter>
     );
 }
 
+// Main app content (needs to be inside AuthProvider to use useAuth)
+function AppContent() {
+    const { isAuthenticated, logout } = useAuth();
+
+    return (
+        <Routes>
+            {/* Public Route - Login */}
+            <Route
+                path="/login"
+                element={
+                    isAuthenticated ? (
+                        <Navigate to="/dashboard" replace />
+                    ) : (
+                        <Login />
+                    )
+                }
+            />
+
+            {/* Protected Routes - Wrapped in AppLayout */}
+            <Route
+                path="/*"
+                element={
+                    isAuthenticated ? (
+                        <AppLayout onLogout={logout}>
+                            <Routes>
+                                <Route path="/dashboard" element={<Dashboard />} />
+                                <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                                {/* Placeholder routes */}
+                                <Route path="/threat-intel" element={<ThreatIntelPage />} />
+                                <Route path="/incidents" element={<IncidentsPage />} />
+                                <Route path="/workflows" element={<WorkflowsPage />} />
+                                <Route path="/audit-logs" element={<AuditLogsPage />} />
+                                <Route path="/settings" element={<PlaceholderPage title="Settings" />} />
+                            </Routes>
+                        </AppLayout>
+                    ) : (
+                        <Navigate to="/login" replace />
+                    )
+                }
+            />
+        </Routes>
+    );
+}
+
+// Placeholder page component for testing navigation
+const PlaceholderPage: React.FC<{ title: string }> = ({ title }) => (
+    <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
+        <div className="text-center">
+            <h1 className="text-4xl font-bold text-text-primary mb-4">{title}</h1>
+            <p className="text-text-secondary">This page is under construction</p>
+            <div className="mt-8 p-6 bg-dark-surface rounded-lg border border-accent-teal/20">
+                <p className="text-sm text-text-secondary">
+                    Navigate using the sidebar to test the navigation system
+                </p>
+            </div>
+        </div>
+    </div>
+);
+
 export default App;
+

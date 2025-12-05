@@ -1,0 +1,14 @@
+INSERT INTO incidents (incident_id, alert_id, severity, status, description, source_ip, destination_ip, raw_data, timestamp, created_at)
+VALUES 
+  (gen_random_uuid(), 'SIEM-10001', 'critical', 'new', 'Ransomware detected on endpoint', '192.168.1.10', '10.0.0.5', '{"type": "ransomware", "threat": "WannaCry"}', NOW() - interval '2 hours', NOW() - interval '2 hours'),
+  (gen_random_uuid(), 'SIEM-10002', 'high', 'investigating', 'Suspicious file encryption activity', '192.168.1.15', '10.0.0.8', '{"type": "encryption", "files_affected": 150}', NOW() - interval '5 hours', NOW() - interval '5 hours'),
+  (gen_random_uuid(), 'SIEM-10003', 'medium', 'new', 'Malicious PowerShell execution', '192.168.1.22', '10.0.0.12', '{"type": "powershell", "command": "encoded"}', NOW() - interval '1 hour', NOW() - interval '1 hour'),
+  (gen_random_uuid(), 'SIEM-10004', 'critical', 'escalated', 'Data exfiltration detected', '192.168.1.45', '10.0.0.1', '{"type": "exfiltration", "data_size": "50GB"}', NOW() - interval '30 minutes', NOW() - interval '30 minutes'),
+  (gen_random_uuid(), 'SIEM-10005', 'low', 'resolved', 'Unauthorized access attempt', '192.168.1.100', '10.0.0.20', '{"type": "access", "failed_attempts": 5}', NOW() - interval '24 hours', NOW() - interval '24 hours'),
+  (gen_random_uuid(), 'SIEM-10006', 'high', 'new', 'Lateral movement detected', '192.168.1.55', '10.0.0.30', '{"type": "lateral", "target_hosts": 3}', NOW() - interval '3 hours', NOW() - interval '3 hours'),
+  (gen_random_uuid(), 'SIEM-10007', 'medium', 'investigating', 'Phishing email with malware attachment', '192.168.1.77', '10.0.0.15', '{"type": "phishing", "attachment": "invoice.exe"}', NOW() - interval '8 hours', NOW() - interval '8 hours'),
+  (gen_random_uuid(), 'SIEM-10008', 'critical', 'new', 'Privilege escalation attempt', '192.168.1.88', '10.0.0.25', '{"type": "privilege", "target": "admin"}', NOW() - interval '45 minutes', NOW() - interval '45 minutes'),
+  (gen_random_uuid(), 'SIEM-10009', 'high', 'resolved', 'Brute force attack detected', '192.168.1.33', '10.0.0.2', '{"type": "bruteforce", "attempts": 1500}', NOW() - interval '48 hours', NOW() - interval '48 hours'),
+  (gen_random_uuid(), 'SIEM-10010', 'low', 'new', 'Suspicious network traffic', '192.168.1.99', '10.0.0.50', '{"type": "network", "protocol": "unknown"}', NOW() - interval '6 hours', NOW() - interval '6 hours'),
+  (gen_random_uuid(), 'SIEM-10011', 'critical', 'investigating', 'Active ransomware encryption in progress', '192.168.1.200', '10.0.0.100', '{"type": "ransomware", "threat": "LockBit"}', NOW() - interval '15 minutes', NOW() - interval '15 minutes'),
+  (gen_random_uuid(), 'SIEM-10012', 'high', 'new', 'C2 communication detected', '192.168.1.150', '185.220.101.1', '{"type": "c2", "beacon_interval": 60}', NOW() - interval '4 hours', NOW() - interval '4 hours');

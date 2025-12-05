@@ -349,21 +349,6 @@ GitHub Actions workflow [`ci.yml`](.github/workflows/ci.yml) executes the qualit
 - [x] Config-driven integrations via `config/integrations.yaml`
 - [x] Cloud readiness checklist (`docs/cloud-readiness.md`)
 
-### Phase 9: Documentation, Demos, OSS Release (✅ Complete)
-- [x] Evaluator/demo guide (`docs/evaluator-demo.md`)
-- [x] README upgrades with links to assets/diagrams
-- [x] Config samples + instructions for open-source users
-
-### Phase 10: Automated Testing & DevOps (✅ Complete)
-- [x] GitHub Actions CI (security scan + backend + frontend jobs)
-- [x] Unified test runner (`scripts/run_tests.py`)
-- [x] Local security/test scripts documented in README
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
 
