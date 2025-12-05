@@ -84,7 +84,7 @@ graph TB
 |---------|---------|------------|
 | **Ingestion** | Alert preprocessing & validation | FastAPI, Redis |
 | **Triage** | AI-powered threat analysis | Python ML, TensorFlow |
-| **Response** | Automated security actions | Celery, AsyncIO |
+| **Response** | Automated response actions | Celery, AsyncIO |
 | **Audit** | Compliance & logging | PostgreSQL, ElasticSearch |
 | **Alerting** | Real-time notifications | WebSockets, SMTP |
 
@@ -112,28 +112,23 @@ docker-compose up -d
 
 # Or manual setup
 ./scripts/setup.sh
-
+```
 
 ### Configuration
 
 1. **Environment Setup**
-```
-python scripts/bootstrap_env.py
-```
-This creates `backend/.env`, `frontend/.env`, and (if missing) `config/integrations.yaml`. Update the generated files with real secrets, database URLs, and API keys.
+   Ensure `.env` files are present in `backend/` and `frontend/` directories. Update them with your configuration.
 
-2. **Integration Overrides (Optional, for multi-env deployments)**
+2. **Database Initialization**
+   Initialize the database schema (WARNING: This resets the database):
+   ```bash
+   python backend/init_db.py
    ```
-   cp config/integrations.example.yaml config/integrations.yaml
+
+   Seed initial test data:
+   ```bash
+   python backend/seed_incidents.py
    ```
-   Update enabled integrations, API URLs, and cloud replica hints per environment. The backend automatically loads this file (set `INTEGRATION_CONFIG_PATH` if you keep it elsewhere).
-
-3. **Database Initialization**
-Run migrations
-python -m alembic upgrade head
-
-Seed initial data
-python scripts/seed_data.py
 
 ### 🔧 Environment Configuration
 
@@ -349,6 +344,11 @@ GitHub Actions workflow [`ci.yml`](.github/workflows/ci.yml) executes the qualit
 - [x] Config-driven integrations via `config/integrations.yaml`
 - [x] Cloud readiness checklist (`docs/cloud-readiness.md`)
 
+### Phase 9: Frontend-Backend Integration (✅ Complete)
+- [x] Real-time Dashboard with live WebSocket updates
+- [x] Full Incident Management (List, Details, Triage)
+- [x] System Health Monitoring
+- [x] Unified Authentication Flow
 
 ---
 
