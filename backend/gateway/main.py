@@ -539,7 +539,23 @@ async def get_incidents(
     try:
         # Build filter conditions
         conditions = []
-
+        if status:
+            conditions.append(Incident.status.ilike(status))
+        if severity:
+            conditions.append(Incident.severity.ilike(severity))
+        
+        # Search filter - exact match for IPs, substring for text
+        if search:
+            conditions.append(or_(
+                cast(Incident.source_ip, String).ilike(f"%{search}%"),
+                cast(Incident.destination_ip, String).ilike(f"%{search}%"),
+                Incident.alert_id.ilike(f"%{search}%"),
+                Incident.description.ilike(f"%{search}%")
+            ))
+        
+        # Threat type filter - matches keywords in description
+        if threat_type:
+            conditions.append(Incident.description.ilike(f"%{threat_type}%"))
         # Build main query with filters
         stmt = select(Incident)
         if conditions:
