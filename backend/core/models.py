@@ -23,43 +23,25 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 class Incident(Base):
-    """Incident model matching actual database schema"""
     __tablename__ = "incidents"
     
-    # Primary key - matches actual DB (incident_id is the PK, no separate id column)
     incident_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    alert_id = Column(String(255), index=True)  # maps to siem_alert_id in some contexts
+    alert_id = Column(String(255), nullable=False, unique=True)
     severity = Column(String(50), nullable=False)
     status = Column(String(50), default='new')
     description = Column(Text)
     source_ip = Column(INET)
     destination_ip = Column(INET)
-    raw_data = Column(JSONB)  # actual column name in DB
-    timestamp = Column(DateTime(timezone=True))  # actual column name in DB
+    raw_data = Column(JSONB)
+    timestamp = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    
-    # Alias properties for code compatibility
-    @property
-    def id(self):
-        return self.incident_id
-    
-    @property
-    def siem_alert_id(self):
-        return self.alert_id
-    
-    @property
-    def received_at(self):
-        return self.timestamp
-    
-    @property
-    def raw_alert(self):
-        return self.raw_data
 
 class TriageIncident(Base):
     __tablename__ = "triage_incidents"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # incident_id = Column(UUID(as_uuid=True), ForeignKey('incidents.incident_id'))  # Optional FK; commented out for direct id use
     source = Column(String(255))
     raw_data = Column(JSONB)
     decision = Column(String(100))
@@ -76,11 +58,13 @@ class TriageIncident(Base):
         Helper to save triage results with UPSERT logic.
         If incident_id already exists, update it; otherwise create new.
         """
+        # Check if exists
         stmt = select(cls).where(cls.id == incident_id)
         result_obj = await db.execute(stmt)
         existing = result_obj.scalar_one_or_none()
         
         if existing:
+            # Update existing record
             existing.decision = result.get("decision")
             existing.confidence = float(result.get("confidence", 0.0))
             existing.reasoning = result.get("reasoning", "")
@@ -88,6 +72,7 @@ class TriageIncident(Base):
             existing.status = "triaged"
             existing.updated_at = func.now()
         else:
+            # Create new record
             instance = cls(
                 id=incident_id,
                 source="manual_api",
@@ -136,7 +121,7 @@ class AuditLog(Base):
     integrity_hash = Column(String(128), nullable=False, default='')
     immutable = Column(Boolean, nullable=False, default=True)
     
-    # Aliases for backward compatibility
+    # Aliases for backward compatibility with response_service
     timestamp = synonym('created_at')
     event_type = synonym('action')
     service_name = synonym('actor')

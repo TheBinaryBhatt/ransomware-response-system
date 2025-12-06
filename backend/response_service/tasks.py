@@ -23,10 +23,7 @@ RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
 def select_response_strategy_logic(incident: ResponseIncident):
     """
     Given a loaded ResponseIncident instance, return (strategy, actions).
-    
-    IMPORTANT: Per user requirements, ALL responses require analyst approval.
-    The system detects and analyzes threats, but containment actions (quarantine, 
-    block IP) are only executed after analyst reviews the threat_score and approves.
+    Kept as pure logic so it can be called synchronously inside the worker.
     """
     triage = incident.triage_result or {}
     decision = triage.get("decision", "unknown")
@@ -39,22 +36,18 @@ def select_response_strategy_logic(incident: ResponseIncident):
     except Exception:
         score = 0
 
-    # All strategies now require analyst approval - never auto-execute containment
-    # The system recommends actions based on threat score, but analyst must approve
+    # Decision logic
     if decision == "confirmed_ransomware" or score >= 80:
-        # Critical: Recommend full containment, but wait for analyst approval
-        strategy = "analyst_review_required"
-        actions = ["notify_analyst", "escalate", "recommend_quarantine", "recommend_block_ip"]
+        strategy = "full_auto"
+        actions = ["quarantine_host", "block_ip", "escalate", "collect_forensics"]
 
     elif decision == "escalate_human" or 40 <= score < 80:
-        # High: Recommend investigation and possible containment
-        strategy = "analyst_review_required"
-        actions = ["notify_analyst", "escalate", "recommend_investigation"]
+        strategy = "semi_auto"
+        actions = ["block_ip", "escalate"]
 
     else:
-        # Low/Medium: Just notify analyst for review
-        strategy = "analyst_review_required"
-        actions = ["notify_analyst"]
+        strategy = "analyst_only"
+        actions = ["escalate"]
 
     return strategy, actions
 
@@ -369,19 +362,6 @@ def build_workflow(strategy: str, incident_id: str, agent_id: str):
             escalate.s(),
             finalize_response.s()
         )
-    
-    # NEW: Analyst review required - only notify and escalate, no containment
-    if strategy == "analyst_review_required":
-        return chain(
-            escalate.s(),
-            finalize_response.s()
-        )
-    
-    # Default fallback - just escalate
-    return chain(
-        escalate.s(),
-        finalize_response.s()
-    )
 
 
 # ============================================================
