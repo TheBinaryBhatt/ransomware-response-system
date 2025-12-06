@@ -1,17 +1,21 @@
 import { useState, FormEvent } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useNotification } from '../contexts/NotificationContext';
 
 const Login: React.FC = () => {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [rememberMe, setRememberMe] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
-    const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const [capsLockOn, setCapsLockOn] = useState(false);
     const [shake, setShake] = useState(false);
 
     const { login } = useAuth();
+    const { addNotification } = useNotification();
+
+    // Check if form is valid for submit button state
+    const isFormValid = username.trim().length > 0 && password.trim().length > 0;
 
     const handleCapsLock = (e: React.KeyboardEvent) => {
         setCapsLockOn(e.getModifierState('CapsLock'));
@@ -19,11 +23,17 @@ const Login: React.FC = () => {
 
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
-        setError('');
 
         // Validation
         if (!username.trim()) {
-            setError('Username is required');
+            addNotification('Username is required', 'error');
+            setShake(true);
+            setTimeout(() => setShake(false), 200);
+            return;
+        }
+
+        if (!password.trim()) {
+            addNotification('Password is required', 'error');
             setShake(true);
             setTimeout(() => setShake(false), 200);
             return;
@@ -39,7 +49,7 @@ const Login: React.FC = () => {
                 localStorage.setItem('rememberMe', 'true');
             }
         } catch (err: any) {
-            setError(err.message || 'Invalid credentials');
+            addNotification(err.message || 'Incorrect username or password', 'error');
             setShake(true);
             setTimeout(() => setShake(false), 200);
         } finally {
@@ -123,15 +133,7 @@ const Login: React.FC = () => {
                         </p>
                     </div>
 
-                    {/* Error Message */}
-                    {error && (
-                        <div
-                            className="mb-6 p-3 bg-status-critical/15 border-2 border-status-critical rounded-lg text-status-critical text-sm animate-slide-in-left"
-                            role="alert"
-                        >
-                            {error}
-                        </div>
-                    )}
+                    {/* Error messages now shown as toast notifications */}
 
                     {/* Login Form */}
                     <form onSubmit={handleSubmit} className="space-y-5">
@@ -150,19 +152,11 @@ const Login: React.FC = () => {
                                 value={username}
                                 onChange={(e) => setUsername(e.target.value)}
                                 placeholder="Enter username"
-                                className={`w-full px-4 py-3 font-mono text-sm bg-dark-bg/50 border-2 rounded-lg text-text-primary placeholder-text-secondary/50 transition-all duration-200 ${error && !username.trim()
-                                    ? 'border-status-critical focus:border-status-critical focus:ring-2 focus:ring-status-critical/20'
-                                    : 'border-text-secondary/60 focus:border-accent-teal focus:ring-2 focus:ring-accent-teal/20'
-                                    } focus:outline-none`}
+                                className="w-full px-4 py-3 font-mono text-sm bg-dark-bg/50 border-2 rounded-lg text-text-primary placeholder-text-secondary/50 transition-all duration-200 border-text-secondary/60 focus:border-accent-teal focus:ring-2 focus:ring-accent-teal/20 focus:outline-none"
                                 disabled={loading}
-                                aria-invalid={error && !username.trim() ? 'true' : 'false'}
-                                aria-describedby={error ? 'username-error' : undefined}
+                                required
                             />
-                            {error && !username.trim() && (
-                                <p id="username-error" className="mt-1 text-xs text-status-critical">
-                                    Username is required
-                                </p>
-                            )}
+
                         </div>
 
                         {/* Password Field */}
@@ -231,7 +225,7 @@ const Login: React.FC = () => {
                         {/* Sign In Button */}
                         <button
                             type="submit"
-                            disabled={loading}
+                            disabled={loading || !isFormValid}
                             className="w-full py-3 bg-accent-teal hover:bg-accent-teal/90 text-dark-bg font-semibold rounded-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-accent-teal focus:ring-offset-2 focus:ring-offset-dark-surface active:scale-95"
                             style={{
                                 boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',

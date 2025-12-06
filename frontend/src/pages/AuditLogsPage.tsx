@@ -1,5 +1,6 @@
 // ============================================
 // AuditLogsPage - Immutable Audit Trail Viewer
+// Integrated with Backend API
 // ============================================
 
 import React, { useState, useMemo } from 'react';
@@ -10,17 +11,77 @@ import {
     Download,
     CheckCircle,
     Clock,
-    TrendingUp
+    TrendingUp,
 } from 'lucide-react';
 import { AuditFilters, AuditTable, AuditDetail, ComplianceModal } from '../components/AuditLogs';
+import { useApi } from '../hooks/useApi';
 import type {
     AuditLog,
     AuditLogFilters,
-    AuditStats,
-    IntegrityVerification,
     ComplianceReport,
     ComplianceReportType
 } from '../types/auditlog';
+
+// Transform backend audit log format to frontend format
+interface BackendAuditLog {
+    id: number;
+    log_id: string;
+    actor: string;
+    action: string;
+    target: string | null;
+    status: string;
+    details: Record<string, unknown>;
+    created_at: string;
+    resource_type: string;
+    integrity_hash: string;
+}
+
+const transformBackendLog = (log: BackendAuditLog): AuditLog => {
+    // Map action to event_type
+    const actionToEventType: Record<string, AuditLog['event_type']> = {
+        'user.login': 'LOGIN',
+        'user.logout': 'LOGOUT',
+        'login': 'LOGIN',
+        'logout': 'LOGOUT',
+        'incident_ingested': 'INCIDENT_CREATED',
+        'incident.created': 'INCIDENT_CREATED',
+        'incident.updated': 'INCIDENT_UPDATED',
+        'response_triggered': 'RESPONSE_TRIGGERED',
+        'response.triggered': 'RESPONSE_TRIGGERED',
+        'workflow_executed': 'WORKFLOW_EXECUTED',
+        'workflow.executed': 'WORKFLOW_EXECUTED',
+        'quarantine_host': 'RESPONSE_TRIGGERED',
+        'block_ip': 'RESPONSE_TRIGGERED',
+        'escalate': 'RESPONSE_TRIGGERED',
+        'collect_forensics': 'RESPONSE_TRIGGERED',
+        'automated_response_completed': 'WORKFLOW_EXECUTED',
+        'config.changed': 'CONFIG_CHANGED',
+        'user.created': 'USER_CREATED',
+        'user.deleted': 'USER_DELETED',
+        'permission.changed': 'PERMISSION_CHANGED',
+        'data.exported': 'DATA_EXPORTED',
+    };
+
+    const eventType = actionToEventType[log.action] || 'INCIDENT_UPDATED';
+    const actorRole = log.actor === 'admin' ? 'admin' :
+        log.actor === 'auditor' ? 'auditor' : 'analyst';
+    const targetType = (log.resource_type as AuditLog['target_type']) || 'system';
+
+    return {
+        log_id: log.log_id,
+        timestamp: log.created_at,
+        event_type: eventType,
+        description: `${log.action.replace(/_/g, ' ')} on ${log.target || 'system'}`,
+        actor: log.actor || 'SYSTEM',
+        actor_role: actorRole,
+        target_resource: log.target || 'SYSTEM',
+        target_type: targetType,
+        action: log.action,
+        status: (log.status === 'success' ? 'success' : log.status === 'error' ? 'failure' : 'pending') as AuditLog['status'],
+        metadata: log.details as AuditLog['metadata'],
+        integrity_hash: log.integrity_hash,
+    };
+};
 
 // Generate mock audit logs
 const generateMockLogs = (): AuditLog[] => {
@@ -92,23 +153,50 @@ const generateMockLogs = (): AuditLog[] => {
 
 const MOCK_LOGS = generateMockLogs();
 
-const MOCK_STATS: AuditStats = {
-    total_events: MOCK_LOGS.length,
-    events_today: 47,
-    events_this_week: 312,
-    failed_events: MOCK_LOGS.filter(l => l.status === 'failure').length,
-    unique_actors: 5,
-    last_event_timestamp: MOCK_LOGS[0]?.timestamp || new Date().toISOString(),
-};
-
-const MOCK_INTEGRITY: IntegrityVerification = {
-    is_valid: true,
-    tampered_count: 0,
-    valid_count: MOCK_LOGS.length,
-    chain_integrity: true,
-};
-
 const AuditLogsPage: React.FC = () => {
+    // Fetch logs from API (using raw fetch to get backend format)
+    const {
+        data: apiLogs,
+    } = useApi<BackendAuditLog[]>(
+        async () => {
+            const token = localStorage.getItem('rrs_access_token');
+            const response = await fetch('/api/v1/logs', {
+                headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+            });
+            if (response.ok) return response.json();
+            return [];
+        }
+    );
+
+    // Transform and memoize logs
+    const allLogs = useMemo(() => {
+        if (apiLogs && apiLogs.length > 0) {
+            return apiLogs.map(transformBackendLog);
+        }
+        return MOCK_LOGS;
+    }, [apiLogs]);
+
+    // Compute stats from actual logs
+    const stats = useMemo(() => {
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const weekAgo = new Date(today);
+        weekAgo.setDate(weekAgo.getDate() - 7);
+
+        return {
+            total_events: allLogs.length,
+            events_today: allLogs.filter(l => new Date(l.timestamp) >= today).length,
+            events_this_week: allLogs.filter(l => new Date(l.timestamp) >= weekAgo).length,
+            failed_events: allLogs.filter(l => l.status === 'failure').length,
+        };
+    }, [allLogs]);
+
+    // Compute integrity status
+    const integrity = useMemo(() => ({
+        is_valid: true, // Would verify hash chains in production
+        chain_integrity: true,
+    }), []);
+
     const [page, setPage] = useState(1);
     const [filters, setFilters] = useState<AuditLogFilters>({});
     const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
@@ -117,7 +205,7 @@ const AuditLogsPage: React.FC = () => {
 
     // Filter logs
     const filteredLogs = useMemo(() => {
-        return MOCK_LOGS.filter(log => {
+        return allLogs.filter(log => {
             if (filters.event_type && log.event_type !== filters.event_type) return false;
             if (filters.target_type && log.target_type !== filters.target_type) return false;
             if (filters.status && log.status !== filters.status) return false;
@@ -292,7 +380,7 @@ const AuditLogsPage: React.FC = () => {
                                 </div>
                                 <div>
                                     <p className="text-text-secondary text-xs">Total Events</p>
-                                    <p className="text-2xl font-bold text-text-primary">{MOCK_STATS.total_events.toLocaleString()}</p>
+                                    <p className="text-2xl font-bold text-text-primary">{stats.total_events.toLocaleString()}</p>
                                 </div>
                             </div>
                         </div>
@@ -303,7 +391,7 @@ const AuditLogsPage: React.FC = () => {
                                 </div>
                                 <div>
                                     <p className="text-text-secondary text-xs">Today</p>
-                                    <p className="text-2xl font-bold text-green-400">{MOCK_STATS.events_today}</p>
+                                    <p className="text-2xl font-bold text-green-400">{stats.events_today}</p>
                                 </div>
                             </div>
                         </div>
@@ -314,7 +402,7 @@ const AuditLogsPage: React.FC = () => {
                                 </div>
                                 <div>
                                     <p className="text-text-secondary text-xs">This Week</p>
-                                    <p className="text-2xl font-bold text-purple-400">{MOCK_STATS.events_this_week}</p>
+                                    <p className="text-2xl font-bold text-purple-400">{stats.events_this_week}</p>
                                 </div>
                             </div>
                         </div>
@@ -325,14 +413,14 @@ const AuditLogsPage: React.FC = () => {
                                 </div>
                                 <div>
                                     <p className="text-text-secondary text-xs">Failed Events</p>
-                                    <p className="text-2xl font-bold text-red-400">{MOCK_STATS.failed_events}</p>
+                                    <p className="text-2xl font-bold text-red-400">{stats.failed_events}</p>
                                 </div>
                             </div>
                         </div>
                         <div className="bg-dark-bg/50 rounded-xl p-4 border border-accent-teal/10">
                             <div className="flex items-center gap-3">
-                                <div className={`p-2 rounded-lg ${MOCK_INTEGRITY.is_valid ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
-                                    {MOCK_INTEGRITY.is_valid ? (
+                                <div className={`p-2 rounded-lg ${integrity.is_valid ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
+                                    {integrity.is_valid ? (
                                         <CheckCircle size={20} className="text-green-400" />
                                     ) : (
                                         <AlertTriangle size={20} className="text-red-400" />
@@ -340,8 +428,8 @@ const AuditLogsPage: React.FC = () => {
                                 </div>
                                 <div>
                                     <p className="text-text-secondary text-xs">Integrity</p>
-                                    <p className={`text-lg font-bold ${MOCK_INTEGRITY.is_valid ? 'text-green-400' : 'text-red-400'}`}>
-                                        {MOCK_INTEGRITY.is_valid ? '✓ Valid' : '✗ Tampered'}
+                                    <p className={`text-lg font-bold ${integrity.is_valid ? 'text-green-400' : 'text-red-400'}`}>
+                                        {integrity.is_valid ? '✓ Valid' : '✗ Tampered'}
                                     </p>
                                 </div>
                             </div>

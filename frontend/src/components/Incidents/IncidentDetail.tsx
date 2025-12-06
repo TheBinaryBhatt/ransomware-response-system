@@ -191,37 +191,122 @@ const IncidentDetail: React.FC<IncidentDetailProps> = ({
                         </div>
                     </div>
 
-                    {/* AI Analysis */}
-                    {(data.ai_decision || data.ai_confidence) && (
+                    {/* AI Analysis - Enhanced with full triage results */}
+                    {(data.ai_decision || data.ai_confidence || data.threat_score || data.triage_result) && (
                         <div className="bg-gradient-to-br from-purple-500/10 to-accent-teal/10 rounded-xl border border-purple-500/20 p-4">
                             <div className="flex items-center gap-2 mb-4">
                                 <Cpu size={16} className="text-purple-400" />
                                 <h3 className="text-sm font-semibold text-text-primary uppercase tracking-wider">
-                                    AI Analysis
+                                    AI Analysis & Detection
                                 </h3>
                             </div>
-                            <div className="space-y-3">
-                                {data.ai_decision && (
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-text-secondary text-sm">Decision</span>
-                                        <span className="text-purple-400 font-semibold text-sm">
-                                            {data.ai_decision}
+                            <div className="space-y-4">
+                                {/* Threat Score */}
+                                {(data.threat_score !== undefined || data.triage_result?.threat_score !== undefined) && (
+                                    <div>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <span className="text-text-secondary text-sm">Threat Score</span>
+                                            <span className={`font-bold text-lg ${(data.threat_score || data.triage_result?.threat_score) >= 80 ? 'text-red-400' :
+                                                    (data.threat_score || data.triage_result?.threat_score) >= 60 ? 'text-orange-400' :
+                                                        (data.threat_score || data.triage_result?.threat_score) >= 30 ? 'text-yellow-400' : 'text-green-400'
+                                                }`}>
+                                                {data.threat_score || data.triage_result?.threat_score}/100
+                                            </span>
+                                        </div>
+                                        <div className="h-3 bg-dark-bg rounded-full overflow-hidden">
+                                            <div
+                                                className={`h-full rounded-full transition-all ${(data.threat_score || data.triage_result?.threat_score) >= 80 ? 'bg-gradient-to-r from-red-600 to-red-400' :
+                                                        (data.threat_score || data.triage_result?.threat_score) >= 60 ? 'bg-gradient-to-r from-orange-600 to-orange-400' :
+                                                            (data.threat_score || data.triage_result?.threat_score) >= 30 ? 'bg-gradient-to-r from-yellow-600 to-yellow-400' : 'bg-gradient-to-r from-green-600 to-green-400'
+                                                    }`}
+                                                style={{ width: `${data.threat_score || data.triage_result?.threat_score || 0}%` }}
+                                            />
+                                        </div>
+                                        <p className="text-xs text-text-secondary mt-1">
+                                            {(data.threat_score || data.triage_result?.threat_score) >= 80 ? '⚠️ CRITICAL - Immediate analyst review required' :
+                                                (data.threat_score || data.triage_result?.threat_score) >= 60 ? '🔶 HIGH - Recommend investigation' :
+                                                    (data.threat_score || data.triage_result?.threat_score) >= 30 ? '🟡 MEDIUM - Monitor closely' : '🟢 LOW - Likely benign'}
+                                        </p>
+                                    </div>
+                                )}
+
+                                {/* AI Decision */}
+                                {(data.ai_decision || data.triage_result?.decision) && (
+                                    <div className="flex items-center justify-between py-2 border-t border-purple-500/20">
+                                        <span className="text-text-secondary text-sm">AI Decision</span>
+                                        <span className={`font-semibold text-sm px-2 py-0.5 rounded ${(data.ai_decision || data.triage_result?.decision) === 'confirmed_ransomware' ? 'bg-red-500/20 text-red-400' :
+                                                (data.ai_decision || data.triage_result?.decision) === 'escalate_human' ? 'bg-orange-500/20 text-orange-400' : 'bg-blue-500/20 text-blue-400'
+                                            }`}>
+                                            {(data.ai_decision || data.triage_result?.decision)?.replace(/_/g, ' ').toUpperCase()}
                                         </span>
                                     </div>
                                 )}
-                                {data.ai_confidence && (
-                                    <div>
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className="text-text-secondary text-sm">Confidence</span>
-                                            <span className="text-text-primary font-mono text-sm">
-                                                {(data.ai_confidence * 100).toFixed(0)}%
-                                            </span>
+
+                                {/* AI Confidence */}
+                                {(data.ai_confidence || data.triage_result?.confidence) && (
+                                    <div className="flex items-center justify-between py-2 border-t border-purple-500/20">
+                                        <span className="text-text-secondary text-sm">AI Confidence</span>
+                                        <span className="text-text-primary font-mono text-sm">
+                                            {((data.ai_confidence || data.triage_result?.confidence) * 100).toFixed(0)}%
+                                        </span>
+                                    </div>
+                                )}
+
+                                {/* AI Reasoning */}
+                                {(data.triage_result?.reasoning) && (
+                                    <div className="pt-2 border-t border-purple-500/20">
+                                        <p className="text-text-secondary text-xs uppercase tracking-wider mb-2">AI Reasoning</p>
+                                        <p className="text-text-primary text-sm bg-dark-surface/50 p-3 rounded-lg italic">
+                                            "{data.triage_result.reasoning}"
+                                        </p>
+                                    </div>
+                                )}
+
+                                {/* Sigma Matches */}
+                                {data.triage_result?.sigma_matches?.length > 0 && (
+                                    <div className="pt-2 border-t border-purple-500/20">
+                                        <p className="text-text-secondary text-xs uppercase tracking-wider mb-2">
+                                            🔍 Sigma Rule Matches ({data.triage_result.sigma_matches.length})
+                                        </p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {data.triage_result.sigma_matches.map((match: string, i: number) => (
+                                                <span key={i} className="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs rounded font-mono">
+                                                    {typeof match === 'string' ? match : JSON.stringify(match)}
+                                                </span>
+                                            ))}
                                         </div>
-                                        <div className="h-2 bg-dark-bg rounded-full overflow-hidden">
-                                            <div
-                                                className="h-full bg-gradient-to-r from-purple-500 to-accent-teal rounded-full transition-all"
-                                                style={{ width: `${data.ai_confidence * 100}%` }}
-                                            />
+                                    </div>
+                                )}
+
+                                {/* YARA Matches */}
+                                {data.triage_result?.yara_matches?.length > 0 && (
+                                    <div className="pt-2 border-t border-purple-500/20">
+                                        <p className="text-text-secondary text-xs uppercase tracking-wider mb-2">
+                                            🦠 YARA Rule Matches ({data.triage_result.yara_matches.length})
+                                        </p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {data.triage_result.yara_matches.map((match: string, i: number) => (
+                                                <span key={i} className="px-2 py-1 bg-red-500/20 text-red-400 text-xs rounded font-mono">
+                                                    {typeof match === 'string' ? match : JSON.stringify(match)}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Recommended Actions */}
+                                {(data.triage_result?.recommended_actions?.length > 0 || data.recommended_actions?.length > 0) && (
+                                    <div className="pt-2 border-t border-purple-500/20">
+                                        <p className="text-text-secondary text-xs uppercase tracking-wider mb-2">
+                                            💡 Recommended Actions
+                                        </p>
+                                        <div className="space-y-1">
+                                            {(data.triage_result?.recommended_actions || data.recommended_actions).map((action: string, i: number) => (
+                                                <div key={i} className="flex items-center gap-2 text-sm">
+                                                    <span className="text-accent-teal">→</span>
+                                                    <span className="text-text-primary">{action.replace(/_/g, ' ')}</span>
+                                                </div>
+                                            ))}
                                         </div>
                                     </div>
                                 )}

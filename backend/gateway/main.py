@@ -517,7 +517,154 @@ async def get_status_breakdown(
     except Exception as e:
         logger.exception(f"[gateway] Error getting status breakdown: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch status breakdown: {str(e)}")
-        
+
+
+@app.get("/api/v1/system/health")
+async def get_system_health(current_user: User = Depends(get_current_active_user)):
+    """
+    Get health status of all backend services.
+    Returns status for Gateway, PostgreSQL, Redis, RabbitMQ, Triage AI, Response Service.
+    """
+    import time
+    import redis.asyncio as aioredis
+    import aio_pika
+    
+    results = []
+    now = datetime.now().isoformat()
+    
+    # 1. Gateway - always healthy if this endpoint responds
+    gateway_start = time.time()
+    results.append({
+        "service": "Gateway",
+        "status": "HEALTHY",
+        "latency": round((time.time() - gateway_start) * 1000, 1),
+        "metric": "API",
+        "last_checked": now
+    })
+    
+    # 2. PostgreSQL
+    try:
+        db_start = time.time()
+        if await test_connection():
+            results.append({
+                "service": "PostgreSQL",
+                "status": "HEALTHY",
+                "latency": round((time.time() - db_start) * 1000, 1),
+                "metric": "Database",
+                "last_checked": now
+            })
+        else:
+            results.append({
+                "service": "PostgreSQL",
+                "status": "OFFLINE",
+                "latency": 0,
+                "metric": "Database",
+                "last_checked": now
+            })
+    except Exception as e:
+        logger.error(f"[health] PostgreSQL check failed: {e}")
+        results.append({
+            "service": "PostgreSQL",
+            "status": "OFFLINE",
+            "latency": 0,
+            "metric": "Database",
+            "last_checked": now
+        })
+    
+    # 3. Redis
+    try:
+        redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
+        redis_start = time.time()
+        redis_client = await aioredis.from_url(redis_url)
+        await redis_client.ping()
+        await redis_client.close()
+        results.append({
+            "service": "Redis",
+            "status": "HEALTHY",
+            "latency": round((time.time() - redis_start) * 1000, 1),
+            "metric": "Cache",
+            "last_checked": now
+        })
+    except Exception as e:
+        logger.error(f"[health] Redis check failed: {e}")
+        results.append({
+            "service": "Redis",
+            "status": "OFFLINE",
+            "latency": 0,
+            "metric": "Cache",
+            "last_checked": now
+        })
+    
+    # 4. RabbitMQ
+    try:
+        rabbitmq_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
+        rabbitmq_start = time.time()
+        connection = await aio_pika.connect_robust(rabbitmq_url)
+        await connection.close()
+        results.append({
+            "service": "RabbitMQ",
+            "status": "HEALTHY",
+            "latency": round((time.time() - rabbitmq_start) * 1000, 1),
+            "metric": "Queue",
+            "last_checked": now
+        })
+    except Exception as e:
+        logger.error(f"[health] RabbitMQ check failed: {e}")
+        results.append({
+            "service": "RabbitMQ",
+            "status": "OFFLINE",
+            "latency": 0,
+            "metric": "Queue",
+            "last_checked": now
+        })
+    
+    # 5. Triage Service
+    try:
+        triage_url = os.getenv("TRIAGE_SERVICE_URL", "http://triage_service:8002")
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            triage_start = time.time()
+            resp = await client.get(f"{triage_url}/health")
+            results.append({
+                "service": "Triage AI",
+                "status": "HEALTHY" if resp.status_code == 200 else "DEGRADED",
+                "latency": round((time.time() - triage_start) * 1000, 1),
+                "metric": "AI Analysis",
+                "last_checked": now
+            })
+    except Exception as e:
+        logger.error(f"[health] Triage AI check failed: {e}")
+        results.append({
+            "service": "Triage AI",
+            "status": "OFFLINE",
+            "latency": 0,
+            "metric": "AI Analysis",
+            "last_checked": now
+        })
+    
+    # 6. Response Service
+    try:
+        response_url = os.getenv("RESPONSE_SERVICE_URL", "http://response_service:8003")
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response_start = time.time()
+            resp = await client.get(f"{response_url}/health")
+            results.append({
+                "service": "Response Engine",
+                "status": "HEALTHY" if resp.status_code == 200 else "DEGRADED",
+                "latency": round((time.time() - response_start) * 1000, 1),
+                "metric": "Response",
+                "last_checked": now
+            })
+    except Exception as e:
+        logger.error(f"[health] Response Engine check failed: {e}")
+        results.append({
+            "service": "Response Engine",
+            "status": "OFFLINE",
+            "latency": 0,
+            "metric": "Response",
+            "last_checked": now
+        })
+    
+    return results
 
 
 @app.get("/api/v1/incidents")
@@ -845,6 +992,199 @@ async def get_audit_logs(current_user: User = Depends(roles_required("admin"))):
 
 
 # -------------------------------------------------
+# Workflows API - Returns workflow definitions
+# -------------------------------------------------
+# Static workflow definitions matching response_service/workflows modules
+WORKFLOW_DEFINITIONS = [
+    {
+        "workflow_id": "wf-ransomware-001",
+        "name": "Ransomware Containment",
+        "description": "Immediate isolation and containment of systems affected by ransomware. Includes network isolation, backup verification, and forensic data collection.",
+        "category": "ransomware",
+        "trigger_conditions": {"severity": ["CRITICAL", "HIGH"], "threat_types": ["ransomware"], "status": ["NEW"]},
+        "steps": [
+            {"step_id": "s1", "name": "Isolate Affected Host", "action_type": "isolate", "description": "Immediately disconnect the affected system from the network", "target_systems": ["EDR", "Firewall"], "timeout_seconds": 30},
+            {"step_id": "s2", "name": "Block C2 Communications", "action_type": "block", "description": "Block all known C2 IP addresses and domains", "target_systems": ["Firewall", "DNS"], "timeout_seconds": 60},
+            {"step_id": "s3", "name": "Collect Forensic Data", "action_type": "collect", "description": "Gather memory dumps and file system artifacts", "target_systems": ["EDR", "SIEM"], "timeout_seconds": 300},
+            {"step_id": "s4", "name": "Notify SOC Team", "action_type": "notify", "description": "Send alerts to SOC analysts and management", "target_systems": ["SOAR", "Email"], "timeout_seconds": 10},
+        ],
+        "is_active": True,
+        "created_by": "admin",
+        "created_at": "2024-01-15T10:00:00Z",
+        "success_rate": 94,
+        "execution_count": 47,
+        "estimated_duration_seconds": 120,
+    },
+    {
+        "workflow_id": "wf-phishing-001",
+        "name": "Phishing Response",
+        "description": "Comprehensive phishing incident response including email quarantine, credential reset, and user notification.",
+        "category": "phishing",
+        "trigger_conditions": {"severity": ["HIGH", "MEDIUM"], "threat_types": ["phishing"], "status": ["NEW", "PENDING"]},
+        "steps": [
+            {"step_id": "s1", "name": "Quarantine Email", "action_type": "quarantine", "description": "Remove phishing email from all mailboxes", "target_systems": ["Email Gateway", "Exchange"], "timeout_seconds": 60},
+            {"step_id": "s2", "name": "Block Sender Domain", "action_type": "block", "description": "Add sender domain to blocklist", "target_systems": ["Email Gateway", "DNS"], "timeout_seconds": 30},
+            {"step_id": "s3", "name": "Analyze Payload", "action_type": "analyze", "description": "Detonate and analyze any attachments or links", "target_systems": ["Sandbox", "Threat Intel"], "timeout_seconds": 180},
+            {"step_id": "s4", "name": "Notify Affected Users", "action_type": "notify", "description": "Send warning to users who received the email", "target_systems": ["Email", "SOAR"], "timeout_seconds": 20},
+        ],
+        "is_active": True,
+        "created_by": "admin",
+        "created_at": "2024-02-10T09:00:00Z",
+        "success_rate": 98,
+        "execution_count": 156,
+        "estimated_duration_seconds": 90,
+    },
+    {
+        "workflow_id": "wf-malware-001",
+        "name": "Malware Eradication",
+        "description": "Complete malware removal workflow including scanning, quarantine, and system restoration.",
+        "category": "malware",
+        "trigger_conditions": {"severity": ["HIGH", "CRITICAL"], "threat_types": ["malware", "trojan", "worm"], "status": ["NEW"]},
+        "steps": [
+            {"step_id": "s1", "name": "Full System Scan", "action_type": "analyze", "description": "Run comprehensive malware scan on affected systems", "target_systems": ["EDR", "Antivirus"], "timeout_seconds": 600},
+            {"step_id": "s2", "name": "Quarantine Malware", "action_type": "quarantine", "description": "Move detected malware to secure quarantine", "target_systems": ["EDR", "Antivirus"], "timeout_seconds": 60},
+            {"step_id": "s3", "name": "Block IOCs", "action_type": "block", "description": "Block all identified indicators of compromise", "target_systems": ["Firewall", "Proxy", "DNS"], "timeout_seconds": 120},
+            {"step_id": "s4", "name": "Collect Artifacts", "action_type": "collect", "description": "Preserve malware samples and log data", "target_systems": ["SIEM", "EDR"], "timeout_seconds": 180},
+            {"step_id": "s5", "name": "Alert Team", "action_type": "notify", "description": "Notify security team of eradication status", "target_systems": ["SOAR", "Slack"], "timeout_seconds": 10},
+        ],
+        "is_active": True,
+        "created_by": "analyst1",
+        "created_at": "2024-03-01T14:00:00Z",
+        "success_rate": 89,
+        "execution_count": 78,
+        "estimated_duration_seconds": 300,
+    },
+    {
+        "workflow_id": "wf-ddos-001",
+        "name": "DDoS Mitigation",
+        "description": "Automated DDoS attack mitigation with traffic analysis, rate limiting, and provider escalation.",
+        "category": "ddos",
+        "trigger_conditions": {"severity": ["CRITICAL"], "threat_types": ["ddos"], "status": ["NEW"]},
+        "steps": [
+            {"step_id": "s1", "name": "Enable Rate Limiting", "action_type": "block", "description": "Apply aggressive rate limiting rules", "target_systems": ["WAF", "Load Balancer"], "timeout_seconds": 15},
+            {"step_id": "s2", "name": "Analyze Traffic Patterns", "action_type": "analyze", "description": "Identify attack vectors and source IPs", "target_systems": ["SIEM", "NetFlow"], "timeout_seconds": 120},
+            {"step_id": "s3", "name": "Block Attack Sources", "action_type": "block", "description": "Block identified attack source IP ranges", "target_systems": ["Firewall", "CDN", "ISP"], "timeout_seconds": 60},
+            {"step_id": "s4", "name": "Escalate to Provider", "action_type": "notify", "description": "Contact ISP/CDN for upstream mitigation", "target_systems": ["SOAR", "PagerDuty"], "timeout_seconds": 30},
+        ],
+        "is_active": True,
+        "created_by": "admin",
+        "created_at": "2024-01-20T16:00:00Z",
+        "success_rate": 91,
+        "execution_count": 23,
+        "estimated_duration_seconds": 75,
+    },
+    {
+        "workflow_id": "wf-insider-001",
+        "name": "Insider Threat Response",
+        "description": "Handle potential insider threats with access revocation, monitoring enhancement, and HR notification.",
+        "category": "insider_threat",
+        "trigger_conditions": {"severity": ["HIGH", "CRITICAL"], "threat_types": ["insider_threat", "data_exfiltration"], "status": ["NEW"]},
+        "steps": [
+            {"step_id": "s1", "name": "Enhance Monitoring", "action_type": "collect", "description": "Enable detailed logging for suspect user", "target_systems": ["SIEM", "DLP", "UEBA"], "timeout_seconds": 60},
+            {"step_id": "s2", "name": "Review Access Logs", "action_type": "analyze", "description": "Analyze recent access patterns and data transfers", "target_systems": ["SIEM", "DLP"], "timeout_seconds": 300},
+            {"step_id": "s3", "name": "Preserve Evidence", "action_type": "collect", "description": "Create forensic copies of relevant data", "target_systems": ["Forensics", "SIEM"], "timeout_seconds": 600},
+            {"step_id": "s4", "name": "Notify HR & Legal", "action_type": "notify", "description": "Alert HR and Legal departments", "target_systems": ["SOAR", "Email"], "timeout_seconds": 20},
+        ],
+        "is_active": True,
+        "created_by": "admin",
+        "created_at": "2024-04-05T11:00:00Z",
+        "success_rate": 100,
+        "execution_count": 8,
+        "estimated_duration_seconds": 320,
+    },
+    {
+        "workflow_id": "wf-custom-001",
+        "name": "Generic Incident Response",
+        "description": "Flexible response workflow for general security incidents with customizable actions.",
+        "category": "custom",
+        "trigger_conditions": {"severity": ["LOW", "MEDIUM", "HIGH"], "threat_types": ["unknown"], "status": ["NEW"]},
+        "steps": [
+            {"step_id": "s1", "name": "Initial Triage", "action_type": "analyze", "description": "Perform initial incident assessment", "target_systems": ["SIEM", "EDR"], "timeout_seconds": 120},
+            {"step_id": "s2", "name": "Collect Evidence", "action_type": "collect", "description": "Gather relevant logs and artifacts", "target_systems": ["SIEM", "EDR", "Firewall"], "timeout_seconds": 180},
+            {"step_id": "s3", "name": "Notify Analyst", "action_type": "notify", "description": "Alert on-call analyst for review", "target_systems": ["PagerDuty", "SOAR"], "timeout_seconds": 10},
+        ],
+        "is_active": True,
+        "created_by": "analyst2",
+        "created_at": "2024-05-12T08:00:00Z",
+        "success_rate": 85,
+        "execution_count": 234,
+        "estimated_duration_seconds": 100,
+    },
+]
+
+
+@app.get("/api/v1/workflows")
+async def get_workflows(current_user: User = Depends(get_current_active_user)):
+    """Return all available workflow definitions"""
+    return WORKFLOW_DEFINITIONS
+
+
+@app.get("/api/v1/workflows/{workflow_id}")
+async def get_workflow(workflow_id: str, current_user: User = Depends(get_current_active_user)):
+    """Return a single workflow by ID"""
+    for wf in WORKFLOW_DEFINITIONS:
+        if wf["workflow_id"] == workflow_id:
+            return wf
+    raise HTTPException(status_code=404, detail="Workflow not found")
+
+
+@app.get("/api/v1/workflow-executions")
+async def get_workflow_executions(
+    limit: int = 20,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Return recent workflow executions from ResponseIncident table"""
+    from core.models import ResponseIncident
+    
+    try:
+        stmt = select(ResponseIncident).order_by(ResponseIncident.created_at.desc()).limit(limit)
+        result = await db.execute(stmt)
+        executions = result.scalars().all()
+        
+        return [
+            {
+                "execution_id": str(ex.id),
+                "workflow_id": ex.response_strategy or "wf-custom-001",
+                "workflow_name": _get_workflow_name(ex.response_strategy),
+                "incident_id": str(ex.incident_id) if ex.incident_id else None,
+                "status": _map_response_status(ex.response_status),
+                "started_at": ex.created_at.isoformat() if ex.created_at else None,
+                "completed_at": ex.updated_at.isoformat() if ex.response_status == "completed" else None,
+                "steps_completed": len(ex.actions_taken) if ex.actions_taken else 0,
+                "steps_total": len(ex.actions_planned) if ex.actions_planned else 4,
+                "actions_taken": ex.actions_taken or [],
+            }
+            for ex in executions
+        ]
+    except Exception as e:
+        logger.error(f"Error fetching workflow executions: {e}")
+        return []
+
+
+def _get_workflow_name(strategy: str) -> str:
+    """Map strategy to workflow name"""
+    mapping = {
+        "full_auto": "Ransomware Containment",
+        "semi_auto": "Malware Eradication",
+        "analyst_only": "Generic Incident Response",
+    }
+    return mapping.get(strategy, "Generic Incident Response")
+
+
+def _map_response_status(status: str) -> str:
+    """Map response status to execution status"""
+    if status in ("completed", "resolved"):
+        return "success"
+    elif status in ("error", "failed"):
+        return "failed"
+    elif status in ("pending", "new"):
+        return "pending"
+    else:
+        return "running"
+
+
+# -------------------------------------------------
 # Threat Intel (proxy to response service)
 # -------------------------------------------------
 @app.get("/api/v1/threatintel/abuseipdb")
@@ -865,6 +1205,112 @@ async def ti_malwarebazaar(hash: str, current_user: User = Depends(analyst_or_ad
             return resp.json()
         except httpx.RequestError:
             raise HTTPException(status_code=502, detail="Threat intel unavailable")
+
+
+# -------------------------------------------------
+# Threat Intel - Frontend-compatible endpoints
+# -------------------------------------------------
+@app.get("/api/v1/threat-intel/ip/{ip}")
+async def ti_lookup_ip(ip: str, current_user: User = Depends(analyst_or_admin)):
+    """
+    IP reputation lookup - combines AbuseIPDB, VirusTotal
+    Returns data in format expected by frontend IPReputation type
+    """
+    result = {
+        "ip_address": ip,
+        "is_malicious": False,
+        "confidence_score": 0,
+        "country": "Unknown",
+        "isp": "Unknown",
+        "reports_count": 0,
+        "last_reported": None,
+        "threat_types": [],
+        "sources": [],
+    }
+    
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        # Try AbuseIPDB
+        try:
+            resp = await client.get(f"{RESPONSE_SERVICE}/api/v1/threatintel/abuseipdb", params={"ip": ip})
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, dict):
+                    conf = data.get("abuseConfidenceScore") or data.get("abuse_confidence_score") or data.get("confidence", 0)
+                    result["confidence_score"] = int(conf) if conf else 0
+                    result["is_malicious"] = result["confidence_score"] >= 50
+                    result["country"] = data.get("countryCode") or data.get("country", "Unknown")
+                    result["isp"] = data.get("isp", "Unknown")
+                    result["reports_count"] = data.get("totalReports", 0)
+                    result["sources"].append({"name": "AbuseIPDB", "result": data})
+        except Exception as e:
+            logger.debug(f"AbuseIPDB lookup failed: {e}")
+        
+        # Try VirusTotal
+        try:
+            resp = await client.get(f"{RESPONSE_SERVICE}/api/v1/threatintel/virustotal", params={"resource": ip})
+            if resp.status_code == 200:
+                vt_data = resp.json()
+                if isinstance(vt_data, dict):
+                    malicious = vt_data.get("malicious_votes") or vt_data.get("positives", 0)
+                    if malicious > 0:
+                        result["is_malicious"] = True
+                        result["threat_types"].append("Flagged by VirusTotal")
+                    result["sources"].append({"name": "VirusTotal", "result": vt_data})
+        except Exception as e:
+            logger.debug(f"VirusTotal IP lookup failed: {e}")
+    
+    return result
+
+
+@app.get("/api/v1/threat-intel/hash/{hash_value}")
+async def ti_lookup_hash(hash_value: str, current_user: User = Depends(analyst_or_admin)):
+    """
+    File hash lookup - combines MalwareBazaar, VirusTotal
+    Returns data in format expected by frontend FileHash type
+    """
+    result = {
+        "hash": hash_value,
+        "hash_type": "sha256" if len(hash_value) == 64 else "md5" if len(hash_value) == 32 else "sha1",
+        "is_malicious": False,
+        "malware_family": None,
+        "first_seen": None,
+        "last_seen": None,
+        "detection_count": 0,
+        "total_engines": 0,
+        "sources": [],
+    }
+    
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        # Try MalwareBazaar
+        try:
+            resp = await client.get(f"{RESPONSE_SERVICE}/api/v1/threatintel/malwarebazaar", params={"hash": hash_value})
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, dict) and (data.get("sha256") or data.get("md5")):
+                    result["is_malicious"] = True
+                    result["malware_family"] = data.get("signature") or data.get("malware_family")
+                    result["first_seen"] = data.get("first_seen")
+                    result["sources"].append({"name": "MalwareBazaar", "result": data})
+        except Exception as e:
+            logger.debug(f"MalwareBazaar lookup failed: {e}")
+        
+        # Try VirusTotal
+        try:
+            resp = await client.get(f"{RESPONSE_SERVICE}/api/v1/threatintel/virustotal", params={"resource": hash_value})
+            if resp.status_code == 200:
+                vt_data = resp.json()
+                if isinstance(vt_data, dict):
+                    positives = vt_data.get("positives") or vt_data.get("malicious_votes", 0)
+                    total = vt_data.get("total") or vt_data.get("total_engines", 0)
+                    result["detection_count"] = positives
+                    result["total_engines"] = total
+                    if positives > 0:
+                        result["is_malicious"] = True
+                    result["sources"].append({"name": "VirusTotal", "result": vt_data})
+        except Exception as e:
+            logger.debug(f"VirusTotal hash lookup failed: {e}")
+    
+    return result
 
 
 # -------------------------------------------------

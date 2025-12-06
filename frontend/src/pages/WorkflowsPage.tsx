@@ -1,8 +1,9 @@
 // ============================================
 // WorkflowsPage - Automated Incident Response
+// Integrated with Backend API
 // ============================================
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
     Zap,
     Shield,
@@ -12,6 +13,7 @@ import {
     AlertTriangle
 } from 'lucide-react';
 import { WorkflowCard, WorkflowDetail, ExecutionHistory } from '../components/Workflows';
+import { useApi } from '../hooks/useApi';
 import type { Workflow, WorkflowExecution, WorkflowCategory } from '../types/workflow';
 
 // Mock data for workflows (since backend may not have these endpoints yet)
@@ -193,10 +195,56 @@ const MOCK_EXECUTIONS: WorkflowExecution[] = [
 ];
 
 const WorkflowsPage: React.FC = () => {
-    const [workflows] = useState<Workflow[]>(MOCK_WORKFLOWS);
-    const [executions] = useState<WorkflowExecution[]>(MOCK_EXECUTIONS);
+    // Fetch workflows from API with fallback to mock data
+    const {
+        data: apiWorkflows,
+        loading: workflowsLoading,
+    } = useApi<Workflow[]>(
+        async () => {
+            try {
+                const token = localStorage.getItem('rrs_access_token');
+                const response = await fetch('/api/v1/workflows', {
+                    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                });
+                if (response.ok) return response.json();
+                return [];
+            } catch {
+                return [];
+            }
+        }
+    );
+
+    // Fetch executions from API (new endpoint)
+    const {
+        data: apiExecutions,
+        loading: executionsLoading,
+    } = useApi<WorkflowExecution[]>(
+        async () => {
+            try {
+                const token = localStorage.getItem('rrs_access_token');
+                const response = await fetch('/api/v1/workflow-executions', {
+                    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                });
+                if (response.ok) return response.json();
+                return [];
+            } catch {
+                return [];
+            }
+        }
+    );
+
+    // Use API data or fallback to mock data
+    const workflows = useMemo(() =>
+        apiWorkflows && apiWorkflows.length > 0 ? apiWorkflows : MOCK_WORKFLOWS,
+        [apiWorkflows]
+    );
+    const executions = useMemo(() =>
+        apiExecutions && apiExecutions.length > 0 ? apiExecutions : MOCK_EXECUTIONS,
+        [apiExecutions]
+    );
+
     const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
-    const [loading] = useState(false);
+    const loading = workflowsLoading || executionsLoading;
     const [categoryFilter, setCategoryFilter] = useState<WorkflowCategory | 'all'>('all');
 
     // Calculate stats
@@ -349,8 +397,8 @@ const WorkflowsPage: React.FC = () => {
                                 key={cat.value}
                                 onClick={() => setCategoryFilter(cat.value)}
                                 className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${categoryFilter === cat.value
-                                        ? 'bg-accent-teal text-dark-bg'
-                                        : 'bg-dark-surface text-text-secondary hover:text-text-primary border border-accent-teal/10 hover:border-accent-teal/30'
+                                    ? 'bg-accent-teal text-dark-bg'
+                                    : 'bg-dark-surface text-text-secondary hover:text-text-primary border border-accent-teal/10 hover:border-accent-teal/30'
                                     }`}
                             >
                                 {cat.label}
