@@ -176,17 +176,96 @@ import type {
 
 export const threatIntelApi = {
     lookupIP: async (ip: string): Promise<IPReputation> => {
-        const response = await axiosInstance.get<IPReputation>(`/api/v1/threat-intel/ip/${ip}`);
-        return response.data;
+        // Gateway proxy: /api/v1/threatintel/abuseipdb?ip=...
+        const response = await axiosInstance.get<{ status: string; data: any }>(
+            '/api/v1/threatintel/abuseipdb',
+            { params: { ip } },
+        );
+
+        const data = response.data?.data || {};
+
+        // Map AbuseIPDB style payload into our IPReputation shape
+        const mapped: IPReputation = {
+            ip_address: data.ipAddress || ip,
+            is_whitelisted: Boolean(data.isWhitelisted),
+            abuse_confidence_score: Number(data.abuseConfidenceScore || 0),
+            total_reports: Number(data.totalReports || 0),
+            last_reported_at: data.lastReportedAt || undefined,
+            threat_types: Array.isArray(data.categories)
+                ? data.categories.map((c: any) => String(c))
+                : [],
+            country_code: data.countryCode || 'UN',
+            country_name: data.countryName || 'Unknown',
+            is_vpn: Boolean(data.isVpn),
+            is_proxy: Boolean(data.isProxy),
+            is_tor: Boolean(data.isTor),
+            is_datacenter: Boolean(data.isHostingProvider),
+            usage_type: data.usageType || 'Unknown',
+            isp_name: data.isp || data.ispName || 'Unknown ISP',
+            domain_name: data.domain || undefined,
+        };
+
+        return mapped;
     },
 
     lookupHash: async (hash: string): Promise<FileHash> => {
-        const response = await axiosInstance.get<FileHash>(`/api/v1/threat-intel/hash/${hash}`);
-        return response.data;
+        // Gateway proxy: /api/v1/threatintel/malwarebazaar?hash=...
+        const response = await axiosInstance.get<{ status: string; data: any }>(
+            '/api/v1/threatintel/malwarebazaar',
+            { params: { hash } },
+        );
+
+        const payload = response.data?.data;
+        const first = Array.isArray(payload?.data) ? payload.data[0] : payload;
+
+        const determineHashType = (h: string): FileHash['hash_type'] => {
+            if (h.length === 32) return 'MD5';
+            if (h.length === 40) return 'SHA1';
+            return 'SHA256';
+        };
+
+        const file_hash = hash;
+        const hash_type = determineHashType(hash);
+
+        const threat_score = first?.intelligence?.threat_score ?? 0;
+        const threat_level: FileHash['threat_level'] =
+            threat_score >= 80 ? 'MALICIOUS' : threat_score >= 30 ? 'SUSPICIOUS' : 'CLEAN';
+
+        const mapped: FileHash = {
+            file_hash,
+            hash_type,
+            sha256: first?.sha256 || (hash.length === 64 ? hash : undefined),
+            md5: first?.md5,
+            sha1: first?.sha1,
+            file_name: first?.file_name,
+            file_size: first?.file_size,
+            file_type: first?.file_type,
+            magic: first?.file_type || 'unknown',
+            threat_level,
+            threat_score: Number(threat_score || 0),
+            threat_names: Array.isArray(first?.detections)
+                ? first.detections.map((d: any) => d.signature || d.family || 'malware')
+                : [],
+            first_seen: first?.first_seen,
+            last_seen: first?.last_seen,
+            reporter_count: Number(first?.intelligence?.reports || 0),
+            detections: Array.isArray(first?.detections)
+                ? first.detections.map((d: any) => ({
+                      vendor: d.vendor || 'unknown',
+                      category: d.category || 'malware',
+                      engine_name: d.engine || d.engine_name || 'unknown',
+                  }))
+                : [],
+        };
+
+        return mapped;
     },
 
+    // Optional: domain lookups can be wired to /api/v1/threatintel/virustotal?resource=...
     lookupDomain: async (domain: string): Promise<any> => {
-        const response = await axiosInstance.get(`/api/v1/threat-intel/domain/${domain}`);
+        const response = await axiosInstance.get('/api/v1/threatintel/virustotal', {
+            params: { resource: domain },
+        });
         return response.data;
     },
 };

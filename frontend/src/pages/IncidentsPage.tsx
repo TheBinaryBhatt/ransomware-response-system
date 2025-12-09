@@ -206,9 +206,9 @@ const IncidentsPage: React.FC = () => {
             </div>
 
             {/* Main Content */}
-            <div className="flex gap-6 p-6">
+            <div className="flex flex-col lg:flex-row gap-6 p-4 lg:p-6">
                 {/* Filters Sidebar */}
-                <div className="w-72 shrink-0">
+                <div className="w-full lg:w-72 shrink-0">
                     <IncidentFilters
                         filters={filters}
                         onFilterChange={handleFilterChange}

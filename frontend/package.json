@@ -53,6 +53,5 @@
     "eslint-plugin-react-hooks": "^4.6.0",
     "tailwindcss": "^4.1.17",
     "vite": "^5.4.21"
-  },
-  "proxy": "http://localhost:8000"
+  }
 }

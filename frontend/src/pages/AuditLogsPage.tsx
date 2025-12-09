@@ -441,9 +441,9 @@ const AuditLogsPage: React.FC = () => {
             </div>
 
             {/* Main Content */}
-            <div className="flex gap-6 p-6 max-w-full">
+            <div className="flex flex-col lg:flex-row gap-6 p-4 lg:p-6 max-w-full">
                 {/* Filters Sidebar */}
-                <div className="w-72 shrink-0">
+                <div className="w-full lg:w-72 shrink-0">
                     <AuditFilters
                         filters={filters}
                         onFilterChange={handleFilterChange}

@@ -33,7 +33,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ children, onLogout }) => {
     };
 
     return (
-        <div className="flex h-screen w-screen bg-dark-bg overflow-hidden">
+        <div className="flex min-h-screen w-screen bg-dark-bg overflow-hidden">
             {/* Sidebar - Desktop Only */}
             <Sidebar isCollapsed={isCollapsed} />
 

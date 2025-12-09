@@ -148,7 +148,7 @@ const AuditDetail: React.FC<AuditDetailProps> = ({ log, onClose }) => {
                         <div>
                             <h3 className="text-lg font-bold text-text-primary mb-3 flex items-center gap-2">
                                 <Monitor size={18} className="text-accent-teal" />
-                                Request Metadata
+                                Context & Metadata
                             </h3>
                             <div className="bg-dark-bg rounded-lg border border-accent-teal/10 divide-y divide-accent-teal/10">
                                 {log.metadata.ip_address && (
@@ -172,6 +172,12 @@ const AuditDetail: React.FC<AuditDetailProps> = ({ log, onClose }) => {
                                         <p className="text-red-400/80 text-sm">{log.metadata.error_message}</p>
                                     </div>
                                 )}
+                                <div className="px-4 py-3">
+                                    <p className="text-text-secondary text-xs uppercase tracking-wider mb-2">Raw Details</p>
+                                    <pre className="text-text-primary text-xs font-mono bg-dark-surface p-3 rounded-lg overflow-x-auto max-h-48">
+                                        {JSON.stringify(log.metadata, null, 2)}
+                                    </pre>
+                                </div>
                             </div>
                         </div>
                     )}
