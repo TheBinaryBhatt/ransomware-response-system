@@ -24,7 +24,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 from core.config import settings
 from core.database import get_db, test_connection
-from core.models import User
+from core.models import User, Incident
 from core.rabbitmq_utils import publish_event
 from core.security import (
     verify_password,
@@ -329,6 +329,147 @@ async def health_check():
 @app.get("/")
 async def root():
     return {"status": "ok", "service": "gateway"}
+
+
+# -------------------------------------------------
+# Incidents API - Query / mutate Incidents
+# -------------------------------------------------
+@app.get("/api/v1/incidents")
+async def get_incidents(
+    limit: int = 100,
+    offset: int = 0,
+    status: Optional[str] = None,
+    severity: Optional[str] = None,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get list of incidents from database"""
+    try:
+        stmt = select(Incident)
+        if status:
+            stmt = stmt.where(Incident.status.ilike(status))
+        if severity:
+            stmt = stmt.where(Incident.severity.ilike(severity))
+        stmt = stmt.order_by(Incident.timestamp.desc()).limit(limit).offset(offset)
+
+        result = await db.execute(stmt)
+        incidents = result.scalars().all()
+
+        return [
+            {
+                "incident_id": str(incident.incident_id),
+                "alert_id": incident.alert_id or "",
+                "severity": (incident.severity or "MEDIUM").upper(),
+                "status": (incident.status or "NEW").upper(),
+                "description": incident.description or "",
+                "source_ip": str(incident.source_ip) if incident.source_ip else None,
+                "destination_ip": str(incident.destination_ip) if incident.destination_ip else None,
+                "timestamp": incident.timestamp.isoformat() if incident.timestamp else None,
+                "created_at": incident.timestamp.isoformat() if incident.timestamp else None,
+                "raw_data": incident.raw_data or {},
+            }
+            for incident in incidents
+        ]
+    except Exception as e:
+        logger.exception(f"Error getting incidents: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/incidents/{incident_id}/ignore", dependencies=[Depends(analyst_or_admin)])
+async def ignore_incident(
+    incident_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark an incident as a false positive / ignored.
+
+    This updates Incident.status to FALSE_POSITIVE and records an audit log.
+    """
+    try:
+        try:
+            incident_uuid = UUID(incident_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid incident ID format")
+
+        result = await db.execute(select(Incident).where(Incident.incident_id == incident_uuid))
+        incident = result.scalar_one_or_none()
+        if not incident:
+            raise HTTPException(status_code=404, detail="Incident not found")
+
+        old_status = incident.status or "NEW"
+        incident.status = "FALSE_POSITIVE"
+
+        await db.commit()
+
+        # Best-effort audit + event. Avoid circular imports at module import time.
+        try:
+            from audit_service.local_ai.audit_agent import audit_agent as _audit_agent  # type: ignore
+
+            await _audit_agent.record_action(
+                action="incident_marked_false_positive",
+                target=str(incident_id),
+                status="success",
+                actor="gateway",
+                resource_type="incident",
+                details={"previous_status": old_status},
+            )
+        except Exception:
+            logger.warning("[gateway] Failed to record audit for incident_marked_false_positive")
+
+        try:
+            await publish_event(
+                "incident.ignored",
+                {
+                    "incident_id": incident_id,
+                    "previous_status": old_status,
+                },
+            )
+        except Exception:
+            logger.debug("[gateway] Failed to publish incident.ignored for %s", incident_id)
+
+        return {"status": "success", "incident_id": incident_id, "new_status": "FALSE_POSITIVE"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error ignoring incident %s: %s", incident_id, e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/incidents/{incident_id}")
+async def get_incident_detail(
+    incident_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get single incident details"""
+    try:
+        incident_uuid = UUID(incident_id)
+        stmt = select(Incident).where(Incident.incident_id == incident_uuid)
+        result = await db.execute(stmt)
+        incident = result.scalar_one_or_none()
+        
+        if not incident:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        
+        return {
+            "incident_id": str(incident.incident_id),
+            "alert_id": incident.alert_id or "",
+            "severity": (incident.severity or "MEDIUM").upper(),
+            "status": (incident.status or "NEW").upper(),
+            "description": incident.description or "",
+            "source_ip": str(incident.source_ip) if incident.source_ip else None,
+            "destination_ip": str(incident.destination_ip) if incident.destination_ip else None,
+            "timestamp": incident.timestamp.isoformat() if incident.timestamp else None,
+            "created_at": incident.timestamp.isoformat() if incident.timestamp else None,
+            "raw_data": incident.raw_data or {},
+        }
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid incident ID format")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error getting incident: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # -------------------------------------------------

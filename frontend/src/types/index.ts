@@ -19,7 +19,7 @@ export interface Incident {
     source_ip: string;
     destination_ip?: string;
     severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
-    status: 'NEW' | 'INVESTIGATING' | 'RESOLVED' | 'ESCALATED' | 'PENDING';
+    status: 'NEW' | 'INVESTIGATING' | 'RESOLVED' | 'ESCALATED' | 'PENDING' | 'FALSE_POSITIVE';
     description: string;
     timestamp: string;
     created_at: string;
@@ -162,7 +162,7 @@ export interface ThreatBreakdown {
 }
 
 export interface StatusBreakdown {
-    status: 'PENDING' | 'INVESTIGATING' | 'RESOLVED' | 'ESCALATED';
+    status: 'PENDING' | 'INVESTIGATING' | 'RESOLVED' | 'ESCALATED' | 'FALSE_POSITIVE';
     count: number;
     percentage: number;
 }

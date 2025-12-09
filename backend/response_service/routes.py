@@ -8,7 +8,7 @@ from sqlalchemy import select
 from typing import List, Optional
 from pydantic import BaseModel, Field, ValidationError
 from core.database import get_db
-from core.models import ResponseIncident, AuditLog
+from core.models import ResponseIncident, AuditLog, Incident
 from shared_lib.integrations.abuseipdb_client import abuseipdb_client
 from shared_lib.integrations.malwarebazaar_client import malwarebazaar_client
 from shared_lib.integrations.virustotal_client import virustotal_client
@@ -169,6 +169,14 @@ async def respond_to_incident(
     if not incident:
         raise HTTPException(404, "Incident not found")
 
+    # If a workflow is already running for this incident, don't start another one.
+    if incident.current_task_id:
+        return {
+            "status": "workflow_already_running",
+            "incident_id": incident_id,
+            "task_id": incident.current_task_id,
+        }
+
     # Validate triage if present
     triage_model = None
     if triage_result_raw:
@@ -228,6 +236,61 @@ async def respond_to_incident(
             "task_id": async_result.id,
             "warning": f"Task triggered but DB update failed: {e}",
         }
+
+    # IMPORTANT: Also update the parent Incident status to RESOLVED
+    try:
+        from uuid import UUID as UUIDType
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Try to find the parent incident - handle both UUID and string alert_id
+        parent_incident = None
+        
+        # First try as UUID
+        try:
+            incident_uuid = UUIDType(incident_id)
+            parent_stmt = select(Incident).where(Incident.incident_id == incident_uuid)
+            parent_result = await db.execute(parent_stmt)
+            parent_incident = parent_result.scalar_one_or_none()
+            logger.info(f"[Response] Looked up incident by UUID: {incident_uuid}, found: {parent_incident is not None}")
+        except (ValueError, TypeError) as uuid_err:
+            logger.info(f"[Response] incident_id '{incident_id}' is not a valid UUID: {uuid_err}")
+        
+        # If not found by UUID, try by alert_id
+        if not parent_incident:
+            parent_stmt = select(Incident).where(Incident.alert_id == incident_id)
+            parent_result = await db.execute(parent_stmt)
+            parent_incident = parent_result.scalar_one_or_none()
+            logger.info(f"[Response] Looked up incident by alert_id: {incident_id}, found: {parent_incident is not None}")
+        
+        if parent_incident:
+            old_status = parent_incident.status
+            parent_incident.status = "RESOLVED"
+            await db.commit()
+            logger.info(f"[Response] Updated incident {incident_id} status from {old_status} to RESOLVED")
+            
+            # Record incident resolution in audit log
+            try:
+                await audit_agent.record_action(
+                    action="incident_resolved",
+                    target=str(incident_id),
+                    status="success",
+                    actor=user.get("username", "unknown"),
+                    resource_type="incident",
+                    details={
+                        "resolution_type": "response_workflow",
+                        "incident_severity": parent_incident.severity,
+                        "resolved_by": user.get("username", "unknown"),
+                        "previous_status": old_status,
+                    },
+                )
+            except Exception as audit_err:
+                logger.warning(f"[Response] Audit log failed: {audit_err}")
+        else:
+            logger.warning(f"[Response] Could not find parent incident for {incident_id}")
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"[Response] Failed to update parent incident status: {e}")
 
     return {
         "status": "workflow_triggered",

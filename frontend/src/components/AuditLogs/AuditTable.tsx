@@ -36,6 +36,7 @@ const eventConfig: Record<AuditEventType, { color: string; icon: React.ElementTy
     LOGOUT: { color: 'bg-slate-500/10 text-slate-400', icon: LogOut },
     INCIDENT_CREATED: { color: 'bg-red-500/10 text-red-400', icon: FileText },
     INCIDENT_UPDATED: { color: 'bg-orange-500/10 text-orange-400', icon: FileText },
+    INCIDENT_RESOLVED: { color: 'bg-green-500/10 text-green-400', icon: CheckCircle },
     RESPONSE_TRIGGERED: { color: 'bg-green-500/10 text-green-400', icon: Zap },
     WORKFLOW_EXECUTED: { color: 'bg-purple-500/10 text-purple-400', icon: Zap },
     CONFIG_CHANGED: { color: 'bg-yellow-500/10 text-yellow-400', icon: Settings },
@@ -218,8 +219,8 @@ const AuditTable: React.FC<AuditTableProps> = ({
                                     key={pageNum}
                                     onClick={() => onPageChange(pageNum)}
                                     className={`w-8 h-8 rounded-lg text-sm font-semibold transition-all ${page === pageNum
-                                            ? 'bg-accent-teal text-dark-bg'
-                                            : 'text-text-secondary hover:bg-dark-surface hover:text-text-primary'
+                                        ? 'bg-accent-teal text-dark-bg'
+                                        : 'text-text-secondary hover:bg-dark-surface hover:text-text-primary'
                                         }`}
                                 >
                                     {pageNum}

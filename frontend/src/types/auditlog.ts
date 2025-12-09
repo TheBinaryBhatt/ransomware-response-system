@@ -7,6 +7,7 @@ export type AuditEventType =
     | 'LOGOUT'
     | 'INCIDENT_CREATED'
     | 'INCIDENT_UPDATED'
+    | 'INCIDENT_RESOLVED'
     | 'RESPONSE_TRIGGERED'
     | 'WORKFLOW_EXECUTED'
     | 'CONFIG_CHANGED'

@@ -12,7 +12,8 @@ import {
     Globe,
     Cpu,
     FileText,
-    Zap
+    Zap,
+    CheckCircle
 } from 'lucide-react';
 import type { Incident } from '../../types';
 
@@ -21,6 +22,7 @@ interface IncidentDetailProps {
     detailData?: any;
     onClose: () => void;
     onTriggerResponse?: (incidentId: string) => void;
+    onMarkFalsePositive?: (incidentId: string) => void;
 }
 
 const IncidentDetail: React.FC<IncidentDetailProps> = ({
@@ -28,6 +30,7 @@ const IncidentDetail: React.FC<IncidentDetailProps> = ({
     detailData,
     onClose,
     onTriggerResponse,
+    onMarkFalsePositive,
 }) => {
     const data = detailData || incident;
     const incidentId = incident.incident_id || incident.alert_id || 'unknown';
@@ -46,6 +49,7 @@ const IncidentDetail: React.FC<IncidentDetailProps> = ({
         INVESTIGATING: { bg: 'bg-orange-500/20', text: 'text-orange-400' },
         RESOLVED: { bg: 'bg-green-500/20', text: 'text-green-400' },
         ESCALATED: { bg: 'bg-red-500/20', text: 'text-red-400' },
+        FALSE_POSITIVE: { bg: 'bg-slate-500/20', text: 'text-slate-300' },
     };
 
     const formatTime = (timestamp: string | null | undefined) => {
@@ -207,8 +211,8 @@ const IncidentDetail: React.FC<IncidentDetailProps> = ({
                                         <div className="flex items-center justify-between mb-2">
                                             <span className="text-text-secondary text-sm">Threat Score</span>
                                             <span className={`font-bold text-lg ${(data.threat_score || data.triage_result?.threat_score) >= 80 ? 'text-red-400' :
-                                                    (data.threat_score || data.triage_result?.threat_score) >= 60 ? 'text-orange-400' :
-                                                        (data.threat_score || data.triage_result?.threat_score) >= 30 ? 'text-yellow-400' : 'text-green-400'
+                                                (data.threat_score || data.triage_result?.threat_score) >= 60 ? 'text-orange-400' :
+                                                    (data.threat_score || data.triage_result?.threat_score) >= 30 ? 'text-yellow-400' : 'text-green-400'
                                                 }`}>
                                                 {data.threat_score || data.triage_result?.threat_score}/100
                                             </span>
@@ -216,8 +220,8 @@ const IncidentDetail: React.FC<IncidentDetailProps> = ({
                                         <div className="h-3 bg-dark-bg rounded-full overflow-hidden">
                                             <div
                                                 className={`h-full rounded-full transition-all ${(data.threat_score || data.triage_result?.threat_score) >= 80 ? 'bg-gradient-to-r from-red-600 to-red-400' :
-                                                        (data.threat_score || data.triage_result?.threat_score) >= 60 ? 'bg-gradient-to-r from-orange-600 to-orange-400' :
-                                                            (data.threat_score || data.triage_result?.threat_score) >= 30 ? 'bg-gradient-to-r from-yellow-600 to-yellow-400' : 'bg-gradient-to-r from-green-600 to-green-400'
+                                                    (data.threat_score || data.triage_result?.threat_score) >= 60 ? 'bg-gradient-to-r from-orange-600 to-orange-400' :
+                                                        (data.threat_score || data.triage_result?.threat_score) >= 30 ? 'bg-gradient-to-r from-yellow-600 to-yellow-400' : 'bg-gradient-to-r from-green-600 to-green-400'
                                                     }`}
                                                 style={{ width: `${data.threat_score || data.triage_result?.threat_score || 0}%` }}
                                             />
@@ -235,7 +239,7 @@ const IncidentDetail: React.FC<IncidentDetailProps> = ({
                                     <div className="flex items-center justify-between py-2 border-t border-purple-500/20">
                                         <span className="text-text-secondary text-sm">AI Decision</span>
                                         <span className={`font-semibold text-sm px-2 py-0.5 rounded ${(data.ai_decision || data.triage_result?.decision) === 'confirmed_ransomware' ? 'bg-red-500/20 text-red-400' :
-                                                (data.ai_decision || data.triage_result?.decision) === 'escalate_human' ? 'bg-orange-500/20 text-orange-400' : 'bg-blue-500/20 text-blue-400'
+                                            (data.ai_decision || data.triage_result?.decision) === 'escalate_human' ? 'bg-orange-500/20 text-orange-400' : 'bg-blue-500/20 text-blue-400'
                                             }`}>
                                             {(data.ai_decision || data.triage_result?.decision)?.replace(/_/g, ' ').toUpperCase()}
                                         </span>
@@ -332,13 +336,31 @@ const IncidentDetail: React.FC<IncidentDetailProps> = ({
 
                 {/* Footer Actions */}
                 <div className="sticky bottom-0 bg-dark-surface border-t border-accent-teal/10 p-4 flex gap-3">
-                    <button
-                        onClick={() => onTriggerResponse?.(incidentId)}
-                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-accent-teal to-accent-teal/80 hover:from-accent-teal/90 hover:to-accent-teal/70 rounded-lg text-dark-bg font-bold text-sm transition-all shadow-lg shadow-accent-teal/20"
-                    >
-                        <Zap size={16} />
-                        Trigger Response
-                    </button>
+                    {incident.status === 'RESOLVED' || incident.status === 'FALSE_POSITIVE' ? (
+                        <div className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-green-500/20 border border-green-500/30 rounded-lg text-green-400 font-bold text-sm">
+                            <CheckCircle size={16} />
+                            {incident.status === 'FALSE_POSITIVE' ? 'Marked as False Positive' : 'Incident Resolved'}
+                        </div>
+                    ) : (
+                        <>
+                            {data.triage_result?.decision === 'false_positive' && onMarkFalsePositive && (
+                                <button
+                                    onClick={() => onMarkFalsePositive(incidentId)}
+                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 border border-slate-400/40 bg-slate-700/40 hover:bg-slate-600/40 rounded-lg text-slate-100 font-semibold text-sm transition-all"
+                                >
+                                    <CheckCircle size={16} />
+                                    Mark as False Positive
+                                </button>
+                            )}
+                            <button
+                                onClick={() => onTriggerResponse?.(incidentId)}
+                                className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-accent-teal to-accent-teal/80 hover:from-accent-teal/90 hover:to-accent-teal/70 rounded-lg text-dark-bg font-bold text-sm transition-all shadow-lg shadow-accent-teal/20"
+                            >
+                                <Zap size={16} />
+                                Trigger Response
+                            </button>
+                        </>
+                    )}
                     <button
                         onClick={onClose}
                         className="flex-1 flex items-center justify-center gap-2 px-4 py-3 border border-accent-teal/30 hover:bg-accent-teal/10 rounded-lg text-accent-teal font-semibold text-sm transition-all"

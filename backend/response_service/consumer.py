@@ -3,8 +3,16 @@ import os
 import logging
 import asyncio
 from typing import Dict, Optional
+
 from sqlalchemy import select
 from core.database import AsyncSessionLocal
+from core.config import settings
+from shared_lib.events.rabbitmq import publish_event
+from audit_service.local_ai.audit_agent import audit_agent
+
+from response_service.local_ai.response_agent import response_agent
+from .models import ResponseIncident
+from .tasks import execute_response_actions
 
 logger = logging.getLogger(__name__)
 
@@ -17,16 +25,78 @@ except Exception:
     except Exception:
         _start_consumer_helper = None
 
-from shared_lib.events.rabbitmq import publish_event
-from response_service.local_ai.response_agent import response_agent
-from .models import ResponseIncident
-
 QUEUE_NAME = os.getenv("RESPONSE_QUEUE", "response.incidents")
 BINDING_KEYS = os.getenv("RESPONSE_BINDINGS", "triage.completed,incident.triaged").split(",")
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
 
 # main_loop will be set by the caller (startup) so we always schedule DB operations on the main uvicorn loop
 MAIN_LOOP: Optional[asyncio.AbstractEventLoop] = None
+
+
+async def _auto_trigger_if_needed(incident: ResponseIncident, triage_result: Dict, decision: Dict | str) -> None:
+    """Optionally auto-start the response workflow based on triage output and config.
+
+    This respects settings.auto_response_enabled and only triggers when no workflow is running yet.
+    """
+    if not settings.auto_response_enabled:
+        return
+
+    # If a workflow is already running, do nothing
+    if incident.current_task_id:
+        return
+
+    triage = triage_result or {}
+    dec = None
+    if isinstance(triage, dict):
+        dec = (triage.get("decision") or "").lower()
+    score_val = None
+    if isinstance(triage, dict):
+        score_val = triage.get("threat_score") or triage.get("score")
+
+    try:
+        score = int(score_val) if score_val is not None else 0
+    except Exception:
+        score = 0
+
+    should_auto = bool(dec == "confirmed_ransomware" or score >= 80)
+
+    if not should_auto:
+        return
+
+    # Fire the Celery workflow
+    async_result = execute_response_actions.delay(str(incident.id))
+    incident.current_task_id = async_result.id
+    incident.response_status = "workflow_started"
+
+    # Emit event + audit log (best-effort, non-blocking)
+    try:
+        await publish_event(
+            "response.workflow.auto_started",
+            {
+                "incident_id": str(incident.id),
+                "task_id": async_result.id,
+                "triage_decision": dec,
+                "triage_score": score,
+            },
+            rabbitmq_host=RABBITMQ_HOST,
+        )
+    except Exception:
+        logger.exception("[Response] Failed publishing response.workflow.auto_started for %s", incident.id)
+
+    try:
+        await audit_agent.record_action(
+            action="auto_response_triggered",
+            target=str(incident.id),
+            status="initiated",
+            actor="response_service",
+            resource_type="incident",
+            details={
+                "decision": dec,
+                "score": score,
+            },
+        )
+    except Exception:
+        logger.warning("[Response] Failed to record audit for auto_response_triggered")
 
 
 async def _process(payload: Dict):
@@ -39,7 +109,7 @@ async def _process(payload: Dict):
         decision = await response_agent.analyze_incident({
             "incident_id": incident_id,
             **(triage_result if isinstance(triage_result, dict) else {}),
-            "raw_data": raw_data
+            "raw_data": raw_data,
         })
 
         # DB save/update performed inside AsyncSessionLocal
@@ -54,41 +124,51 @@ async def _process(payload: Dict):
                     source=(raw_data.get("source") if isinstance(raw_data, dict) else "triage_service"),
                     raw_data=raw_data,
                     triage_result=triage_result,
-                    response_status="pending"
+                    response_status="pending",
                 )
                 db.add(incident)
             else:
                 incident.triage_result = triage_result
-                incident.response_status = "pending"
+                # Reset to pending if new triage result arrives and nothing has started yet
+                if not incident.current_task_id:
+                    incident.response_status = "pending"
+
+            # Optionally auto-start workflow based on triage+config
+            await _auto_trigger_if_needed(incident, triage_result, decision)
 
             await db.commit()
 
         # Publish decision (publish_event is async)
-        await publish_event("response.selected", {
-            "incident_id": incident_id,
-            "decision": decision.get("decision") if isinstance(decision, dict) else decision,
-            "score": decision.get("score") if isinstance(decision, dict) else None,
-            "confidence": decision.get("confidence") if isinstance(decision, dict) else None,
-            "suggested_actions": decision.get("actions") if isinstance(decision, dict) else [],
-            "full_decision": decision
-        }, rabbitmq_host=RABBITMQ_HOST)
+        await publish_event(
+            "response.selected",
+            {
+                "incident_id": incident_id,
+                "decision": decision.get("decision") if isinstance(decision, dict) else decision,
+                "score": decision.get("score") if isinstance(decision, dict) else None,
+                "confidence": decision.get("confidence") if isinstance(decision, dict) else None,
+                "suggested_actions": decision.get("actions") if isinstance(decision, dict) else [],
+                "full_decision": decision,
+            },
+            rabbitmq_host=RABBITMQ_HOST,
+        )
 
         logger.info("[Response] Published decision for %s", incident_id)
 
     except Exception as e:
         logger.exception("[Response] Error processing %s: %s", incident_id, e)
         try:
-            await publish_event("response.failed",
+            await publish_event(
+                "response.failed",
                 {"incident_id": incident_id, "error": str(e)},
-                rabbitmq_host=RABBITMQ_HOST
+                rabbitmq_host=RABBITMQ_HOST,
             )
         except Exception:
             logger.exception("[Response] Failed publishing response.failed for %s", incident_id)
 
 
 def _handle_event(routing_key: str, payload: Dict):
-    """
-    Runs inside consumer thread → schedule onto MAIN_LOOP (the server's loop) to avoid cross-loop futures.
+    """Runs inside consumer thread → schedule onto MAIN_LOOP (the server's loop) to avoid cross-loop futures.
+
     If MAIN_LOOP is not set, fallback to the current loop (best-effort).
     """
     global MAIN_LOOP
@@ -112,13 +192,15 @@ def _handle_event(routing_key: str, payload: Dict):
             asyncio.set_event_loop(loop)
             loop.run_until_complete(_process(payload))
             loop.close()
+
         t = __import__("threading").Thread(target=_run, daemon=True)
         t.start()
 
 
 def start(rabbitmq_host: str = None, main_loop: Optional[asyncio.AbstractEventLoop] = None):
-    """
-    Start the consumer. Pass `main_loop` (the uvicorn/fastapi running loop) so DB coroutines are scheduled there.
+    """Start the consumer.
+
+    Pass `main_loop` (the uvicorn/fastapi running loop) so DB coroutines are scheduled there.
     """
     global _start_consumer_helper, MAIN_LOOP
     rabbitmq_host = rabbitmq_host or RABBITMQ_HOST

@@ -113,6 +113,13 @@ export const incidentsApi = {
         return response.data;
     },
 
+    ignore: async (id: string): Promise<ApiResponse> => {
+        const response = await axiosInstance.post<ApiResponse>(
+            `/api/v1/incidents/${id}/ignore`,
+        );
+        return response.data;
+    },
+
     getTimeline: async (id: string): Promise<any> => {
         const response = await axiosInstance.get(`/api/v1/incidents/${id}/timeline`);
         return response.data;

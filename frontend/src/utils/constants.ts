@@ -38,7 +38,7 @@ export const SEVERITY_LEVELS = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'] as 
 export type SeverityLevel = typeof SEVERITY_LEVELS[number];
 
 // Status Types
-export const STATUS_TYPES = ['NEW', 'INVESTIGATING', 'RESOLVED', 'ESCALATED', 'PENDING'] as const;
+export const STATUS_TYPES = ['NEW', 'INVESTIGATING', 'RESOLVED', 'ESCALATED', 'PENDING', 'FALSE_POSITIVE'] as const;
 export type StatusType = typeof STATUS_TYPES[number];
 
 // User Roles

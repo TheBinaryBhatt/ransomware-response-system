@@ -24,7 +24,7 @@ class AuditLogCreate(BaseModel):
 
 
 class AuditLogResponse(BaseModel):
-    id: int
+    id: str  # Changed from int to str to support UUID from database
     log_id: str
     actor: str
     action: str
@@ -46,7 +46,7 @@ async def get_audit_logs(db: AsyncSession = Depends(get_db)):
 
         return [
             AuditLogResponse(
-                id=log.id,
+                id=str(log.id),
                 log_id=log.log_id,
                 actor=log.actor,
                 action=log.action,
@@ -82,7 +82,7 @@ async def create_audit_log(log_data: AuditLogCreate, db: AsyncSession = Depends(
         await db.refresh(new_log)
 
         return AuditLogResponse(
-            id=new_log.id,
+            id=str(new_log.id),
             log_id=new_log.log_id,
             actor=new_log.actor,
             action=new_log.action,
@@ -111,7 +111,7 @@ async def get_audit_log(log_id: int, db: AsyncSession = Depends(get_db)):
             raise HTTPException(status_code=404, detail="Audit log not found")
 
         return AuditLogResponse(
-            id=audit_log.id,
+            id=str(audit_log.id),
             log_id=audit_log.log_id,
             actor=audit_log.actor,
             action=audit_log.action,

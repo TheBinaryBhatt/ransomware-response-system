@@ -2,7 +2,8 @@
 // IncidentsPage - Main Incidents Management Page
 // ============================================
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
     AlertTriangle,
     ShieldAlert,
@@ -13,18 +14,32 @@ import {
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { useNotification } from '../contexts/NotificationContext';
 import { incidentsApi } from '../services/api';
 import { IncidentFilters, IncidentTable, IncidentDetail } from '../components/Incidents';
 import type { Incident } from '../types';
 import type { IncidentFilters as FilterType } from '../types/incident';
 
 const IncidentsPage: React.FC = () => {
+    // URL query params for filters from navigation
+    const [searchParams] = useSearchParams();
+
+    // Notification hook
+    const { addNotification } = useNotification();
+
     // Pagination state
     const [page, setPage] = useState(1);
-    const [limit] = useState(15);
+    const [limit] = useState(100);  // Show up to 100 incidents to match dashboard
 
-    // Filter state
-    const [filters, setFilters] = useState<FilterType>({});
+    // Filter state - initialize from URL params
+    const [filters, setFilters] = useState<FilterType>(() => {
+        const severity = searchParams.get('severity');
+        const status = searchParams.get('status');
+        return {
+            ...(severity ? { severity } : {}),
+            ...(status ? { status } : {}),
+        };
+    });
 
     // Detail drawer state
     const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
@@ -94,12 +109,26 @@ const IncidentsPage: React.FC = () => {
     const handleTriggerResponse = useCallback(async (incidentId: string) => {
         try {
             await incidentsApi.triggerResponse(incidentId);
+            addNotification('Response triggered successfully! Incident marked as resolved or in progress.', 'success');
             refetch();
             handleCloseDetail();
         } catch (err) {
             console.error('Failed to trigger response:', err);
+            addNotification('Failed to trigger response. Please try again.', 'error');
         }
-    }, [refetch]);
+    }, [refetch, addNotification, handleCloseDetail]);
+
+    const handleMarkFalsePositive = useCallback(async (incidentId: string) => {
+        try {
+            await incidentsApi.ignore(incidentId);
+            addNotification('Incident marked as false positive.', 'success');
+            refetch();
+            handleCloseDetail();
+        } catch (err) {
+            console.error('Failed to mark incident as false positive:', err);
+            addNotification('Failed to mark as false positive. Please try again.', 'error');
+        }
+    }, [refetch, addNotification, handleCloseDetail]);
 
     return (
         <div className="min-h-screen bg-dark-bg">
@@ -226,6 +255,7 @@ const IncidentsPage: React.FC = () => {
                     incident={selectedIncident}
                     onClose={handleCloseDetail}
                     onTriggerResponse={handleTriggerResponse}
+                    onMarkFalsePositive={handleMarkFalsePositive}
                 />
             )}
         </div>

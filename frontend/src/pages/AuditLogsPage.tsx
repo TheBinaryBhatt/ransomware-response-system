@@ -46,6 +46,8 @@ const transformBackendLog = (log: BackendAuditLog): AuditLog => {
         'incident_ingested': 'INCIDENT_CREATED',
         'incident.created': 'INCIDENT_CREATED',
         'incident.updated': 'INCIDENT_UPDATED',
+        'incident_resolved': 'INCIDENT_RESOLVED',
+        'incident.resolved': 'INCIDENT_RESOLVED',
         'response_triggered': 'RESPONSE_TRIGGERED',
         'response.triggered': 'RESPONSE_TRIGGERED',
         'workflow_executed': 'WORKFLOW_EXECUTED',

@@ -13,6 +13,7 @@ interface StatCardProps {
     isPulsing?: boolean;
     progress?: number; // 0-100
     isLoading?: boolean;
+    onClick?: () => void;  // Optional click handler for navigation
 }
 
 const StatCard: React.FC<StatCardProps> = ({
@@ -23,6 +24,7 @@ const StatCard: React.FC<StatCardProps> = ({
     isPulsing = false,
     progress,
     isLoading = false,
+    onClick,
 }) => {
     // Icon mapping
     const iconMap = {
@@ -66,10 +68,12 @@ const StatCard: React.FC<StatCardProps> = ({
 
     return (
         <div
+            onClick={onClick}
             className={`
         bg-gradient-to-br ${styles.bg}
         border ${styles.border}
         ${isPulsing ? 'animate-pulse' : ''}
+        ${onClick ? 'cursor-pointer' : ''}
         rounded-lg p-6 shadow-lg
         transform transition-all duration-300
         hover:shadow-xl hover:-translate-y-1
