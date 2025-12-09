@@ -7,7 +7,7 @@ Run with:
 import os
 import logging
 import asyncio
-from datetime import timedelta
+from datetime import timedelta, datetime
 from uuid import UUID
 from typing import Optional, Literal, Any
 
@@ -128,13 +128,25 @@ def _serialize_user(user: User) -> dict:
 # WebSocket Event Helpers
 # -------------------------------------------------
 async def emit_incident_update(data):
-    await sio.emit("incident_update", data, room="soc_analysts")
+    """Emit a generic incident_update event used by the dashboard widgets."""
+    await sio.emit("incident_update", data)
 
 
 async def handle_domain_event(routing_key: str, payload: dict) -> None:
-    """Called by the event bridge. Forwards events to WebSocket."""
+    """Called by the event bridge. Forwards events to WebSocket.
+
+    We emit both a generic `incident_update` event and a specific event whose
+    name matches the RabbitMQ routing key (e.g. `incident.received`,
+    `triage.completed`, `response.workflow.completed`). This lets the
+    frontend subscribe directly to rich domain events while keeping
+    backwards-compatible behaviour for existing widgets.
+    """
     try:
+        # Generic event for dashboards that just care that *something* changed
         await emit_incident_update({"event": routing_key, "payload": payload})
+
+        # Specific event so hooks like useWebSocketEvent('incident.received') work
+        await sio.emit(routing_key, payload)
     except Exception:
         logger.exception("[gateway] Failed forwarding event %s", routing_key)
 
@@ -329,6 +341,105 @@ async def health_check():
 @app.get("/")
 async def root():
     return {"status": "ok", "service": "gateway"}
+
+
+class ServiceHealth(BaseModel):
+    service: str
+    status: str
+    latency: float
+    metric: str
+    last_checked: str
+
+
+@app.get("/api/v1/system/health", response_model=list[ServiceHealth])
+async def system_health() -> list[ServiceHealth]:
+    """Aggregate health information from core services.
+
+    This powers the frontend System Health panel. It is best-effort:
+    individual service failures are reflected in their own status without
+    breaking the whole response.
+    """
+
+    services = [
+        ("Gateway", None),  # handled locally
+        ("Ingestion", f"{INGESTION_SERVICE}/health"),
+        ("Triage", f"{TRIAGE_SERVICE}/health"),
+        ("Response", f"{RESPONSE_SERVICE}/health"),
+        ("Audit", f"{AUDIT_SERVICE}/health"),
+    ]
+
+    results: list[ServiceHealth] = []
+
+    # Local gateway health (no network call)
+    now = datetime.utcnow().isoformat() + "Z"
+    results.append(
+        ServiceHealth(
+            service="Gateway",
+            status="HEALTHY",
+            latency=0.0,
+            metric="0ms",
+            last_checked=now,
+        )
+    )
+
+    # Query downstream services concurrently
+    async with httpx.AsyncClient(timeout=2.0) as client:
+        tasks = []
+        for name, url in services[1:]:  # skip Gateway (index 0)
+            if not url:
+                continue
+            tasks.append(_probe_service(client, name, url))
+
+        probed = await asyncio.gather(*tasks, return_exceptions=True)
+        for item in probed:
+            if isinstance(item, ServiceHealth):
+                results.append(item)
+            else:
+                # In case of unexpected error, mark unknown
+                results.append(
+                    ServiceHealth(
+                        service="unknown",
+                        status="OFFLINE",
+                        latency=0.0,
+                        metric="error",
+                        last_checked=datetime.utcnow().isoformat() + "Z",
+                    )
+                )
+
+    return results
+
+
+async def _probe_service(client: httpx.AsyncClient, name: str, url: str) -> ServiceHealth:
+    start = asyncio.get_event_loop().time()
+    try:
+        resp = await client.get(url)
+        elapsed_ms = (asyncio.get_event_loop().time() - start) * 1000
+        if resp.status_code == 200:
+            return ServiceHealth(
+                service=name,
+                status="HEALTHY",
+                latency=round(elapsed_ms, 1),
+                metric=f"{round(elapsed_ms, 1)}ms",
+                last_checked=datetime.utcnow().isoformat() + "Z",
+            )
+        else:
+            return ServiceHealth(
+                service=name,
+                status="DEGRADED",
+                latency=round(elapsed_ms, 1),
+                metric=f"{resp.status_code} {round(elapsed_ms, 1)}ms",
+                last_checked=datetime.utcnow().isoformat() + "Z",
+            )
+    except Exception as e:
+        elapsed_ms = (asyncio.get_event_loop().time() - start) * 1000
+        logger.warning("[gateway] Health probe failed for %s: %s", name, e)
+        return ServiceHealth(
+            service=name,
+            status="OFFLINE",
+            latency=round(elapsed_ms, 1),
+            metric="unreachable",
+            last_checked=datetime.utcnow().isoformat() + "Z",
+        )
 
 
 # -------------------------------------------------
