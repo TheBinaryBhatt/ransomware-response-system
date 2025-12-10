@@ -16,6 +16,7 @@ import {
     CheckCircle
 } from 'lucide-react';
 import type { Incident } from '../../types';
+import AIInvestigationTimeline from './AIInvestigationTimeline';
 
 interface IncidentDetailProps {
     incident: Incident;
@@ -194,6 +195,11 @@ const IncidentDetail: React.FC<IncidentDetailProps> = ({
                             )}
                         </div>
                     </div>
+
+                    {/* AI Investigation Workflow Timeline - NEW */}
+                    {data.triage_result && (
+                        <AIInvestigationTimeline triageResult={data.triage_result} />
+                    )}
 
                     {/* AI Analysis - Enhanced with full triage results */}
                     {(data.ai_decision || data.ai_confidence || data.threat_score || data.triage_result) && (

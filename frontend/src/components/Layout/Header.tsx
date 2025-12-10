@@ -5,8 +5,9 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Bell, Menu, Settings as SettingsIcon, LogOut, ChevronDown } from 'lucide-react';
+import { Search, Menu, Settings as SettingsIcon, LogOut, ChevronDown } from 'lucide-react';
 import type { User } from '../../types';
+import NotificationBell from '../Common/NotificationBell';
 
 interface HeaderProps {
     onToggleSidebar: () => void;
@@ -16,7 +17,6 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ onToggleSidebar, currentUser, onLogout }) => {
     const [searchQuery, setSearchQuery] = useState('');
-    const [notificationCount] = useState(3);
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const navigate = useNavigate();
@@ -103,18 +103,10 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, currentUser, onLogout 
 
                 {/* Right Section - Icons + User Menu */}
                 <div className="flex items-center gap-4">
-                    {/* Notification Bell */}
-                    <button
-                        className="relative p-2 hover:bg-dark-bg/50 rounded-lg transition-colors"
-                        aria-label="Notifications"
-                    >
-                        <Bell size={24} className="text-accent-teal" />
-                        {notificationCount > 0 && (
-                            <span className="absolute -top-1 -right-1 w-5 h-5 bg-status-critical rounded-full flex items-center justify-center text-white text-xs font-bold">
-                                {notificationCount}
-                            </span>
-                        )}
-                    </button>
+                    {/* Enhanced Notification Bell with Real-time Alerts */}
+                    <div className="relative">
+                        <NotificationBell />
+                    </div>
 
                     {/* Sidebar Toggle (Desktop only) */}
                     <button
