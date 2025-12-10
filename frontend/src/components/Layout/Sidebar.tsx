@@ -40,25 +40,41 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
         <>
             {/* Desktop Sidebar */}
             <aside
-                className={`hidden md:flex flex-col h-screen bg-dark-surface border-r border-accent-teal/10 transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-64'
+                className={`hidden md:flex flex-col h-screen border-r transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-64'
                     }`}
+                style={{
+                    backgroundColor: 'rgba(10, 22, 40, 0.7)',
+                    backdropFilter: 'blur(10px)',
+                    borderColor: 'rgba(59, 130, 246, 0.2)'
+                }}
             >
                 {/* Logo Section - Matches header height */}
-                <div className="h-20 flex items-center justify-center border-b border-accent-teal/10">
+                <div className="h-20 flex items-center justify-center border-b" style={{ borderColor: 'rgba(59, 130, 246, 0.2)' }}>
                     {isCollapsed ? (
-                        <span className="text-2xl font-bold text-accent-teal">R</span>
+                        <span className="text-2xl font-bold" style={{ color: '#3b82f6' }}>R</span>
                     ) : (
                         <div className="flex items-center gap-2">
-                            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                            <svg width="32" height="32" viewBox="0 0 40 40" fill="none">
                                 <path
-                                    d="M16 2 L26 6 L26 14 Q26 22 16 30 Q6 22 6 14 L6 6 Z"
-                                    stroke="#32B8C6"
-                                    strokeWidth="1.5"
-                                    fill="rgba(50, 184, 198, 0.1)"
+                                    d="M20 4 L34 8.8 L34 18 Q34 28 20 36.8 Q6 28 6 18 L6 8.8 Z"
+                                    stroke="#3b82f6"
+                                    strokeWidth="1.2"
+                                    fill="rgba(59, 130, 246, 0.2)"
                                 />
-                                <rect x="13" y="14" width="6" height="6" rx="1" fill="#32B8C6" />
+                                <text
+                                    x="20"
+                                    y="23"
+                                    fontFamily="Arial, sans-serif"
+                                    fontSize="11"
+                                    fontWeight="bold"
+                                    fill="#3b82f6"
+                                    textAnchor="middle"
+                                    dominantBaseline="middle"
+                                >
+                                    RRS
+                                </text>
                             </svg>
-                            <span className="text-xl font-bold text-text-primary">RRS</span>
+                            <span className="text-xl font-bold text-white">RRS</span>
                         </div>
                     )}
                 </div>
@@ -78,13 +94,17 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
                                 className={`
                   flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200
                   ${isActive
-                                        ? 'bg-accent-teal/10 border-l-4 border-accent-teal text-accent-teal'
-                                        : 'border-l-4 border-transparent text-text-secondary hover:bg-dark-bg/50 hover:text-accent-teal'
+                                        ? 'bg-blue-500/20 border-l-4 text-blue-400'
+                                        : 'border-l-4 border-transparent text-gray-400 hover:text-blue-400'
                                     }
                   ${isCollapsed ? 'justify-center' : ''}
                 `}
+                                style={{
+                                    borderLeftColor: isActive ? '#3b82f6' : 'transparent',
+                                    backgroundColor: isActive ? 'rgba(59, 130, 246, 0.15)' : 'transparent'
+                                }}
                             >
-                                <Icon size={24} className={isActive ? 'text-accent-teal' : ''} />
+                                <Icon size={24} className={isActive ? '' : ''} style={{ color: isActive ? '#3b82f6' : undefined }} />
                                 {!isCollapsed && (
                                     <span className="text-sm font-medium">{item.label}</span>
                                 )}
@@ -95,14 +115,18 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
 
                 {/* Footer */}
                 {!isCollapsed && (
-                    <div className="px-4 py-4 border-t border-accent-teal/10">
-                        <p className="text-xs text-text-secondary">© 2025 RRS</p>
+                    <div className="px-4 py-4 border-t" style={{ borderColor: 'rgba(59, 130, 246, 0.2)' }}>
+                        <p className="text-xs text-gray-500">© 2025 RRS</p>
                     </div>
                 )}
             </aside>
 
             {/* Mobile Bottom Navigation */}
-            <nav className="md:hidden fixed bottom-0 left-0 right-0 h-20 bg-dark-surface border-t border-accent-teal/10 z-50">
+            <nav className="md:hidden fixed bottom-0 left-0 right-0 h-20 z-50" style={{
+                backgroundColor: 'rgba(10, 22, 40, 0.9)',
+                backdropFilter: 'blur(10px)',
+                borderTop: '1px solid rgba(59, 130, 246, 0.2)'
+            }}>
                 <div className="flex items-center justify-around h-full px-2">
                     {navItems.map((item) => {
                         const isActive = location.pathname === item.route;
@@ -117,20 +141,20 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
                             >
                                 {/* Active indicator - Line at top */}
                                 {isActive && (
-                                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-12 h-1 bg-accent-teal rounded-b-full" />
+                                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-12 h-1 rounded-b-full" style={{ backgroundColor: '#3b82f6' }} />
                                 )}
 
                                 {/* Icon */}
                                 <Icon
                                     size={24}
-                                    className={`${isActive ? 'text-accent-teal' : 'text-text-secondary'
-                                        } transition-colors`}
+                                    className="transition-colors"
+                                    style={{ color: isActive ? '#3b82f6' : '#9ca3af' }}
                                 />
 
                                 {/* Label - Small text below icon */}
                                 <span
-                                    className={`text-xs mt-1 ${isActive ? 'text-accent-teal' : 'text-text-secondary'
-                                        }`}
+                                    className="text-xs mt-1"
+                                    style={{ color: isActive ? '#3b82f6' : '#9ca3af' }}
                                 >
                                     {item.label.split(' ')[0]}{/* First word only on mobile */}
                                 </span>
