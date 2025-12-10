@@ -1,4 +1,4 @@
-import { useState, FormEvent, useEffect, useRef } from 'react';
+import { useState, FormEvent } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { User, Lock, Eye, EyeOff } from 'lucide-react';
@@ -177,7 +177,7 @@ const Login: React.FC = () => {
                         </div>
 
                         {/* Title */}
-                        <h1 className="text-2xl font-bold text-white mb-2" style={{ 
+                        <h1 className="text-2xl font-bold text-white mb-2" style={{
                             fontFamily: 'system-ui, -apple-system, sans-serif',
                             letterSpacing: '0.5px'
                         }}>
