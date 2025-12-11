@@ -251,10 +251,10 @@ export const threatIntelApi = {
             reporter_count: Number(first?.intelligence?.reports || 0),
             detections: Array.isArray(first?.detections)
                 ? first.detections.map((d: any) => ({
-                      vendor: d.vendor || 'unknown',
-                      category: d.category || 'malware',
-                      engine_name: d.engine || d.engine_name || 'unknown',
-                  }))
+                    vendor: d.vendor || 'unknown',
+                    category: d.category || 'malware',
+                    engine_name: d.engine || d.engine_name || 'unknown',
+                }))
                 : [],
         };
 
@@ -372,6 +372,73 @@ export const usersApi = {
 };
 
 // ============================================
+// SECURITY / QUARANTINE API
+// ============================================
+
+export interface QuarantinedIP {
+    id: string;
+    ip_address: string;
+    reason: string;
+    attack_type: string;
+    quarantined_at: string;
+    quarantined_by: string;
+    expires_at: string | null;
+    is_permanent: boolean;
+    status: string;
+    related_incident_id: string | null;
+}
+
+export interface QuarantineRequest {
+    ip_address: string;
+    reason: string;
+    attack_type?: string;
+    threat_level?: string;
+    duration_hours?: number;
+}
+
+export interface RecentAttack {
+    incident_id: string;
+    attack_type: string;
+    threat_level: string;
+    source_ip: string;
+    severity: string;
+    status: string;
+    description: string;
+    timestamp: string;
+    auto_quarantined: boolean;
+}
+
+export const securityApi = {
+    // List all quarantined IPs
+    listQuarantinedIPs: async (status?: string): Promise<{ quarantined_ips: QuarantinedIP[]; total: number }> => {
+        const response = await axiosInstance.get('/api/v1/security/quarantine', {
+            params: { status },
+        });
+        return response.data;
+    },
+
+    // Quarantine an IP
+    quarantineIP: async (data: QuarantineRequest): Promise<ApiResponse> => {
+        const response = await axiosInstance.post<ApiResponse>('/api/v1/security/quarantine', data);
+        return response.data;
+    },
+
+    // Release an IP from quarantine
+    releaseIP: async (ip: string): Promise<ApiResponse> => {
+        const response = await axiosInstance.delete<ApiResponse>(`/api/v1/security/quarantine/${encodeURIComponent(ip)}`);
+        return response.data;
+    },
+
+    // Get recent attacks
+    getRecentAttacks: async (limit?: number): Promise<{ attacks: RecentAttack[]; total: number }> => {
+        const response = await axiosInstance.get('/api/v1/security/attacks/recent', {
+            params: { limit },
+        });
+        return response.data;
+    },
+};
+
+// ============================================
 // EXPORT ALL APIs
 // ============================================
 
@@ -385,6 +452,11 @@ export const api = {
     system: systemApi,
     integrations: integrationsApi,
     users: usersApi,
+    security: securityApi,
 };
 
+// Export axios instance for direct use
+export { axiosInstance };
+
 export default api;
+

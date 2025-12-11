@@ -15,6 +15,7 @@ import {
 import { WorkflowCard, WorkflowDetail, ExecutionHistory } from '../components/Workflows';
 import { useApi } from '../hooks/useApi';
 import type { Workflow, WorkflowExecution, WorkflowCategory } from '../types/workflow';
+import AnimatedBackground from '../components/Common/AnimatedBackground';
 
 // Mock data for workflows (since backend may not have these endpoints yet)
 const MOCK_WORKFLOWS: Workflow[] = [
@@ -317,151 +318,162 @@ const WorkflowsPage: React.FC = () => {
     ];
 
     return (
-        <div className="min-h-screen bg-dark-bg">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-dark-surface via-dark-surface to-dark-bg border-b border-accent-teal/10">
-                <div className="px-6 py-6">
-                    <div className="flex items-center justify-between mb-6">
-                        <div>
-                            <div className="flex items-center gap-3 mb-2">
-                                <div className="p-2 bg-gradient-to-br from-accent-teal/20 to-purple-500/20 rounded-lg">
-                                    <WorkflowIcon size={24} className="text-accent-teal" />
-                                </div>
-                                <h1 className="text-3xl font-bold text-text-primary">
-                                    Response Workflows
-                                </h1>
-                            </div>
-                            <p className="text-text-secondary">
-                                Automated incident response orchestration and execution
-                            </p>
-                        </div>
-                    </div>
+        <div className="min-h-screen relative overflow-hidden" style={{
+            background: 'radial-gradient(ellipse at center, #0a1628 0%, #020817 100%)'
+        }}>
+            {/* Animated Network Background */}
+            <AnimatedBackground opacity={0.3} lineCount={6} nodeCount={10} starCount={40} />
 
-                    {/* Stats Cards */}
-                    <div className="grid grid-cols-4 gap-4">
-                        <div className="bg-dark-bg/50 rounded-xl p-4 border border-accent-teal/10">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-accent-teal/10 rounded-lg">
-                                    <WorkflowIcon size={20} className="text-accent-teal" />
+            {/* Content */}
+            <div className="relative z-10">
+                {/* Header */}
+                <div className="border-b border-blue-500/10" style={{
+                    backgroundColor: 'rgba(37, 39, 39, 0.6)',
+                    backdropFilter: 'blur(10px)'
+                }}>
+                    <div className="px-6 py-6">
+                        <div className="flex items-center justify-between mb-6">
+                            <div>
+                                <div className="flex items-center gap-3 mb-2">
+                                    <div className="p-2 bg-gradient-to-br from-accent-teal/20 to-purple-500/20 rounded-lg">
+                                        <WorkflowIcon size={24} className="text-accent-teal" />
+                                    </div>
+                                    <h1 className="text-3xl font-bold text-text-primary">
+                                        Response Workflows
+                                    </h1>
                                 </div>
-                                <div>
-                                    <p className="text-text-secondary text-xs">Total Workflows</p>
-                                    <p className="text-2xl font-bold text-text-primary">{stats.total}</p>
-                                </div>
+                                <p className="text-text-secondary">
+                                    Automated incident response orchestration and execution
+                                </p>
                             </div>
                         </div>
-                        <div className="bg-dark-bg/50 rounded-xl p-4 border border-accent-teal/10">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-green-500/10 rounded-lg">
-                                    <Shield size={20} className="text-green-400" />
-                                </div>
-                                <div>
-                                    <p className="text-text-secondary text-xs">Active</p>
-                                    <p className="text-2xl font-bold text-green-400">{stats.active}</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="bg-dark-bg/50 rounded-xl p-4 border border-accent-teal/10">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-purple-500/10 rounded-lg">
-                                    <TrendingUp size={20} className="text-purple-400" />
-                                </div>
-                                <div>
-                                    <p className="text-text-secondary text-xs">Avg Success Rate</p>
-                                    <p className="text-2xl font-bold text-purple-400">{stats.avgSuccessRate}%</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="bg-dark-bg/50 rounded-xl p-4 border border-accent-teal/10">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-orange-500/10 rounded-lg">
-                                    <Activity size={20} className="text-orange-400" />
-                                </div>
-                                <div>
-                                    <p className="text-text-secondary text-xs">Total Executions</p>
-                                    <p className="text-2xl font-bold text-orange-400">{stats.totalExecutions.toLocaleString()}</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
 
-            {/* Main Content */}
-            <div className="p-6 max-w-7xl mx-auto">
-                {/* Category Filter */}
-                <div className="mb-8">
-                    <div className="flex flex-wrap gap-2">
-                        {categories.map(cat => (
-                            <button
-                                key={cat.value}
-                                onClick={() => setCategoryFilter(cat.value)}
-                                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${categoryFilter === cat.value
-                                    ? 'bg-accent-teal text-dark-bg'
-                                    : 'bg-dark-surface text-text-secondary hover:text-text-primary border border-accent-teal/10 hover:border-accent-teal/30'
-                                    }`}
-                            >
-                                {cat.label}
-                            </button>
-                        ))}
+                        {/* Stats Cards */}
+                        <div className="grid grid-cols-4 gap-4">
+                            <div className="bg-dark-bg/50 rounded-xl p-4 border border-accent-teal/10">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-accent-teal/10 rounded-lg">
+                                        <WorkflowIcon size={20} className="text-accent-teal" />
+                                    </div>
+                                    <div>
+                                        <p className="text-text-secondary text-xs">Total Workflows</p>
+                                        <p className="text-2xl font-bold text-text-primary">{stats.total}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="bg-dark-bg/50 rounded-xl p-4 border border-accent-teal/10">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-green-500/10 rounded-lg">
+                                        <Shield size={20} className="text-green-400" />
+                                    </div>
+                                    <div>
+                                        <p className="text-text-secondary text-xs">Active</p>
+                                        <p className="text-2xl font-bold text-green-400">{stats.active}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="bg-dark-bg/50 rounded-xl p-4 border border-accent-teal/10">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-purple-500/10 rounded-lg">
+                                        <TrendingUp size={20} className="text-purple-400" />
+                                    </div>
+                                    <div>
+                                        <p className="text-text-secondary text-xs">Avg Success Rate</p>
+                                        <p className="text-2xl font-bold text-purple-400">{stats.avgSuccessRate}%</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="bg-dark-bg/50 rounded-xl p-4 border border-accent-teal/10">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-orange-500/10 rounded-lg">
+                                        <Activity size={20} className="text-orange-400" />
+                                    </div>
+                                    <div>
+                                        <p className="text-text-secondary text-xs">Total Executions</p>
+                                        <p className="text-2xl font-bold text-orange-400">{stats.totalExecutions.toLocaleString()}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                {/* Workflows Grid */}
-                <div className="mb-12">
-                    <h2 className="text-xl font-bold text-text-primary mb-6 flex items-center gap-2">
-                        <Zap size={20} className="text-accent-teal" />
-                        Available Workflows
-                        <span className="text-text-secondary font-normal text-sm ml-2">
-                            ({filteredWorkflows.length})
-                        </span>
-                    </h2>
-
-                    {loading ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {[...Array(6)].map((_, i) => (
-                                <div key={i} className="h-64 bg-dark-surface rounded-xl animate-pulse" />
+                {/* Main Content */}
+                <div className="p-6 max-w-7xl mx-auto">
+                    {/* Category Filter */}
+                    <div className="mb-8">
+                        <div className="flex flex-wrap gap-2">
+                            {categories.map(cat => (
+                                <button
+                                    key={cat.value}
+                                    onClick={() => setCategoryFilter(cat.value)}
+                                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${categoryFilter === cat.value
+                                        ? 'bg-accent-teal text-dark-bg'
+                                        : 'bg-dark-surface text-text-secondary hover:text-text-primary border border-accent-teal/10 hover:border-accent-teal/30'
+                                        }`}
+                                >
+                                    {cat.label}
+                                </button>
                             ))}
                         </div>
-                    ) : filteredWorkflows.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {filteredWorkflows.map(workflow => (
-                                <WorkflowCard
-                                    key={workflow.workflow_id}
-                                    workflow={workflow}
-                                    onSelect={setSelectedWorkflow}
-                                />
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="text-center py-16 bg-dark-surface rounded-xl border border-accent-teal/10">
-                            <AlertTriangle size={48} className="mx-auto text-text-secondary/30 mb-4" />
-                            <p className="text-text-secondary text-lg">No workflows found</p>
-                            <p className="text-text-secondary/60 text-sm mt-1">
-                                Try selecting a different category
-                            </p>
-                        </div>
-                    )}
+                    </div>
+
+                    {/* Workflows Grid */}
+                    <div className="mb-12">
+                        <h2 className="text-xl font-bold text-text-primary mb-6 flex items-center gap-2">
+                            <Zap size={20} className="text-accent-teal" />
+                            Available Workflows
+                            <span className="text-text-secondary font-normal text-sm ml-2">
+                                ({filteredWorkflows.length})
+                            </span>
+                        </h2>
+
+                        {loading ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {[...Array(6)].map((_, i) => (
+                                    <div key={i} className="h-64 bg-dark-surface rounded-xl animate-pulse" />
+                                ))}
+                            </div>
+                        ) : filteredWorkflows.length > 0 ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {filteredWorkflows.map(workflow => (
+                                    <WorkflowCard
+                                        key={workflow.workflow_id}
+                                        workflow={workflow}
+                                        onSelect={setSelectedWorkflow}
+                                    />
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-center py-16 bg-dark-surface rounded-xl border border-accent-teal/10">
+                                <AlertTriangle size={48} className="mx-auto text-text-secondary/30 mb-4" />
+                                <p className="text-text-secondary text-lg">No workflows found</p>
+                                <p className="text-text-secondary/60 text-sm mt-1">
+                                    Try selecting a different category
+                                </p>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Recent Executions */}
+                    <div>
+                        <h2 className="text-xl font-bold text-text-primary mb-6 flex items-center gap-2">
+                            <Activity size={20} className="text-accent-teal" />
+                            Recent Executions
+                        </h2>
+                        <ExecutionHistory executions={executions} loading={false} />
+                    </div>
                 </div>
 
-                {/* Recent Executions */}
-                <div>
-                    <h2 className="text-xl font-bold text-text-primary mb-6 flex items-center gap-2">
-                        <Activity size={20} className="text-accent-teal" />
-                        Recent Executions
-                    </h2>
-                    <ExecutionHistory executions={executions} loading={false} />
-                </div>
+                {/* Workflow Detail Drawer */}
+                {selectedWorkflow && (
+                    <WorkflowDetail
+                        workflow={selectedWorkflow}
+                        onClose={() => setSelectedWorkflow(null)}
+                        onExecute={handleExecuteWorkflow}
+                    />
+                )}
             </div>
-
-            {/* Workflow Detail Drawer */}
-            {selectedWorkflow && (
-                <WorkflowDetail
-                    workflow={selectedWorkflow}
-                    onClose={() => setSelectedWorkflow(null)}
-                    onExecute={handleExecuteWorkflow}
-                />
-            )}
         </div>
     );
 };

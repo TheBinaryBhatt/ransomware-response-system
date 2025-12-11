@@ -2,7 +2,7 @@
 // IncidentsPage - Main Incidents Management Page
 // ============================================
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
     AlertTriangle,
@@ -19,6 +19,7 @@ import { incidentsApi } from '../services/api';
 import { IncidentFilters, IncidentTable, IncidentDetail } from '../components/Incidents';
 import type { Incident } from '../types';
 import type { IncidentFilters as FilterType } from '../types/incident';
+import AnimatedBackground from '../components/Common/AnimatedBackground';
 
 const IncidentsPage: React.FC = () => {
     // URL query params for filters from navigation
@@ -131,133 +132,144 @@ const IncidentsPage: React.FC = () => {
     }, [refetch, addNotification, handleCloseDetail]);
 
     return (
-        <div className="min-h-screen bg-dark-bg">
-            {/* Page Header */}
-            <div className="bg-gradient-to-r from-dark-surface via-dark-surface to-dark-bg border-b border-accent-teal/10">
-                <div className="px-6 py-6">
-                    {/* Title Row */}
-                    <div className="flex items-center justify-between mb-6">
-                        <div>
-                            <div className="flex items-center gap-3 mb-2">
-                                <div className="p-2 bg-accent-teal/10 rounded-lg">
-                                    <ShieldAlert size={24} className="text-accent-teal" />
+        <div className="min-h-screen relative overflow-hidden" style={{
+            background: 'radial-gradient(ellipse at center, #0a1628 0%, #020817 100%)'
+        }}>
+            {/* Animated Network Background */}
+            <AnimatedBackground opacity={0.3} lineCount={6} nodeCount={10} starCount={40} />
+
+            {/* Content */}
+            <div className="relative z-10">
+                {/* Page Header */}
+                <div className="border-b border-blue-500/10" style={{
+                    backgroundColor: 'rgba(37, 39, 39, 0.6)',
+                    backdropFilter: 'blur(10px)'
+                }}>
+                    <div className="px-6 py-6">
+                        {/* Title Row */}
+                        <div className="flex items-center justify-between mb-6">
+                            <div>
+                                <div className="flex items-center gap-3 mb-2">
+                                    <div className="p-2 bg-accent-teal/10 rounded-lg">
+                                        <ShieldAlert size={24} className="text-accent-teal" />
+                                    </div>
+                                    <h1 className="text-3xl font-bold text-text-primary">
+                                        Security Incidents
+                                    </h1>
                                 </div>
-                                <h1 className="text-3xl font-bold text-text-primary">
-                                    Security Incidents
-                                </h1>
-                            </div>
-                            <p className="text-text-secondary">
-                                Monitor, analyze, and respond to security threats in real-time
-                            </p>
-                        </div>
-                        <button
-                            onClick={() => refetch()}
-                            disabled={loading}
-                            className="flex items-center gap-2 px-4 py-2 bg-accent-teal/10 hover:bg-accent-teal/20 border border-accent-teal/30 rounded-lg text-accent-teal text-sm font-medium transition-all disabled:opacity-50"
-                        >
-                            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-                            Refresh
-                        </button>
-                    </div>
-
-                    {/* Stats Cards */}
-                    <div className="grid grid-cols-4 gap-4">
-                        {/* Total Incidents */}
-                        <div className="bg-dark-bg/50 rounded-xl p-4 border border-accent-teal/10 hover:border-accent-teal/30 transition-colors">
-                            <div className="flex items-center justify-between mb-2">
-                                <p className="text-text-secondary text-sm font-medium">Total Incidents</p>
-                                <Activity size={18} className="text-accent-teal" />
-                            </div>
-                            <p className="text-3xl font-bold text-text-primary">{stats.total}</p>
-                            <p className="text-text-secondary text-xs mt-1">All recorded incidents</p>
-                        </div>
-
-                        {/* Critical */}
-                        <div className="bg-dark-bg/50 rounded-xl p-4 border border-red-500/20 hover:border-red-500/40 transition-colors">
-                            <div className="flex items-center justify-between mb-2">
-                                <p className="text-text-secondary text-sm font-medium">Critical</p>
-                                <AlertTriangle size={18} className="text-red-400" />
-                            </div>
-                            <p className="text-3xl font-bold text-red-400">{stats.critical}</p>
-                            <p className="text-text-secondary text-xs mt-1">Require immediate action</p>
-                        </div>
-
-                        {/* Pending */}
-                        <div className="bg-dark-bg/50 rounded-xl p-4 border border-yellow-500/20 hover:border-yellow-500/40 transition-colors">
-                            <div className="flex items-center justify-between mb-2">
-                                <p className="text-text-secondary text-sm font-medium">Pending</p>
-                                <Clock size={18} className="text-yellow-400" />
-                            </div>
-                            <p className="text-3xl font-bold text-yellow-400">{stats.pending}</p>
-                            <p className="text-text-secondary text-xs mt-1">Awaiting analysis</p>
-                        </div>
-
-                        {/* Resolved */}
-                        <div className="bg-dark-bg/50 rounded-xl p-4 border border-green-500/20 hover:border-green-500/40 transition-colors">
-                            <div className="flex items-center justify-between mb-2">
-                                <p className="text-text-secondary text-sm font-medium">Resolved</p>
-                                <CheckCircle size={18} className="text-green-400" />
-                            </div>
-                            <p className="text-3xl font-bold text-green-400">{stats.resolved}</p>
-                            <p className="text-text-secondary text-xs mt-1">Successfully handled</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Main Content */}
-            <div className="flex flex-col lg:flex-row gap-6 p-4 lg:p-6">
-                {/* Filters Sidebar */}
-                <div className="w-full lg:w-72 shrink-0">
-                    <IncidentFilters
-                        filters={filters}
-                        onFilterChange={handleFilterChange}
-                    />
-                </div>
-
-                {/* Table Area */}
-                <div className="flex-1 min-w-0">
-                    {/* Error State */}
-                    {error && (
-                        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 mb-6">
-                            <div className="flex items-start gap-3">
-                                <AlertTriangle size={20} className="text-red-400 shrink-0 mt-0.5" />
-                                <div>
-                                    <p className="text-red-400 font-medium">Error loading incidents</p>
-                                    <p className="text-red-400/70 text-sm mt-1">{error}</p>
-                                </div>
+                                <p className="text-text-secondary">
+                                    Monitor, analyze, and respond to security threats in real-time
+                                </p>
                             </div>
                             <button
                                 onClick={() => refetch()}
-                                className="mt-3 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 rounded-lg text-red-400 text-sm font-medium transition-colors"
+                                disabled={loading}
+                                className="flex items-center gap-2 px-4 py-2 bg-accent-teal/10 hover:bg-accent-teal/20 border border-accent-teal/30 rounded-lg text-accent-teal text-sm font-medium transition-all disabled:opacity-50"
                             >
-                                Try Again
+                                <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                                Refresh
                             </button>
                         </div>
-                    )}
 
-                    {/* Incidents Table */}
-                    <IncidentTable
-                        incidents={incidentsList}
-                        loading={loading}
-                        total={total}
-                        page={page}
-                        limit={limit}
-                        onPageChange={setPage}
-                        onRowClick={handleRowClick}
-                    />
+                        {/* Stats Cards */}
+                        <div className="grid grid-cols-4 gap-4">
+                            {/* Total Incidents */}
+                            <div className="bg-dark-bg/50 rounded-xl p-4 border border-accent-teal/10 hover:border-accent-teal/30 transition-colors">
+                                <div className="flex items-center justify-between mb-2">
+                                    <p className="text-text-secondary text-sm font-medium">Total Incidents</p>
+                                    <Activity size={18} className="text-accent-teal" />
+                                </div>
+                                <p className="text-3xl font-bold text-text-primary">{stats.total}</p>
+                                <p className="text-text-secondary text-xs mt-1">All recorded incidents</p>
+                            </div>
+
+                            {/* Critical */}
+                            <div className="bg-dark-bg/50 rounded-xl p-4 border border-red-500/20 hover:border-red-500/40 transition-colors">
+                                <div className="flex items-center justify-between mb-2">
+                                    <p className="text-text-secondary text-sm font-medium">Critical</p>
+                                    <AlertTriangle size={18} className="text-red-400" />
+                                </div>
+                                <p className="text-3xl font-bold text-red-400">{stats.critical}</p>
+                                <p className="text-text-secondary text-xs mt-1">Require immediate action</p>
+                            </div>
+
+                            {/* Pending */}
+                            <div className="bg-dark-bg/50 rounded-xl p-4 border border-yellow-500/20 hover:border-yellow-500/40 transition-colors">
+                                <div className="flex items-center justify-between mb-2">
+                                    <p className="text-text-secondary text-sm font-medium">Pending</p>
+                                    <Clock size={18} className="text-yellow-400" />
+                                </div>
+                                <p className="text-3xl font-bold text-yellow-400">{stats.pending}</p>
+                                <p className="text-text-secondary text-xs mt-1">Awaiting analysis</p>
+                            </div>
+
+                            {/* Resolved */}
+                            <div className="bg-dark-bg/50 rounded-xl p-4 border border-green-500/20 hover:border-green-500/40 transition-colors">
+                                <div className="flex items-center justify-between mb-2">
+                                    <p className="text-text-secondary text-sm font-medium">Resolved</p>
+                                    <CheckCircle size={18} className="text-green-400" />
+                                </div>
+                                <p className="text-3xl font-bold text-green-400">{stats.resolved}</p>
+                                <p className="text-text-secondary text-xs mt-1">Successfully handled</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
 
-            {/* Detail Drawer */}
-            {showDetail && selectedIncident && (
-                <IncidentDetail
-                    incident={selectedIncident}
-                    onClose={handleCloseDetail}
-                    onTriggerResponse={handleTriggerResponse}
-                    onMarkFalsePositive={handleMarkFalsePositive}
-                />
-            )}
+                {/* Main Content */}
+                <div className="flex flex-col lg:flex-row gap-6 p-4 lg:p-6">
+                    {/* Filters Sidebar */}
+                    <div className="w-full lg:w-72 shrink-0">
+                        <IncidentFilters
+                            filters={filters}
+                            onFilterChange={handleFilterChange}
+                        />
+                    </div>
+
+                    {/* Table Area */}
+                    <div className="flex-1 min-w-0">
+                        {/* Error State */}
+                        {error && (
+                            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 mb-6">
+                                <div className="flex items-start gap-3">
+                                    <AlertTriangle size={20} className="text-red-400 shrink-0 mt-0.5" />
+                                    <div>
+                                        <p className="text-red-400 font-medium">Error loading incidents</p>
+                                        <p className="text-red-400/70 text-sm mt-1">{error}</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => refetch()}
+                                    className="mt-3 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 rounded-lg text-red-400 text-sm font-medium transition-colors"
+                                >
+                                    Try Again
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Incidents Table */}
+                        <IncidentTable
+                            incidents={incidentsList}
+                            loading={loading}
+                            total={total}
+                            page={page}
+                            limit={limit}
+                            onPageChange={setPage}
+                            onRowClick={handleRowClick}
+                        />
+                    </div>
+                </div>
+
+                {/* Detail Drawer */}
+                {showDetail && selectedIncident && (
+                    <IncidentDetail
+                        incident={selectedIncident}
+                        onClose={handleCloseDetail}
+                        onTriggerResponse={handleTriggerResponse}
+                        onMarkFalsePositive={handleMarkFalsePositive}
+                    />
+                )}
+            </div>
         </div>
     );
 };

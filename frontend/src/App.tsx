@@ -7,6 +7,7 @@ import Dashboard from './components/Dashboard';
 import Login from './components/Login';
 import NotificationCenter from './components/Common/NotificationCenter';
 import { IncidentsPage, ThreatIntelPage, WorkflowsPage, AuditLogsPage, SettingsPage } from './pages';
+import QuarantinePage from './pages/QuarantinePage';
 
 function App() {
     return (
@@ -56,6 +57,7 @@ function AppContent() {
                                 <Route path="/workflows" element={<WorkflowsPage />} />
                                 <Route path="/audit-logs" element={<AuditLogsPage />} />
                                 <Route path="/settings" element={<SettingsPage />} />
+                                <Route path="/quarantine" element={<QuarantinePage />} />
                             </Routes>
                         </AppLayout>
                     ) : (

@@ -111,6 +111,25 @@ CREATE TABLE IF NOT EXISTS audit_events (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Quarantined IPs table (for security middleware auto-blocking)
+CREATE TABLE IF NOT EXISTS quarantined_ips (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    ip_address VARCHAR(45) UNIQUE NOT NULL,  -- IPv4/IPv6
+    reason VARCHAR(500),
+    attack_type VARCHAR(50),  -- sql_injection, brute_force, ssrf, etc.
+    quarantined_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    quarantined_by VARCHAR(64),  -- analyst username or 'security_middleware'
+    expires_at TIMESTAMP WITH TIME ZONE,  -- NULL = permanent
+    status VARCHAR(20) DEFAULT 'active',  -- active, expired, released
+    related_incident_id UUID,
+    block_count VARCHAR(10) DEFAULT '1',
+    notes TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_quarantine_ip ON quarantined_ips(ip_address);
+CREATE INDEX IF NOT EXISTS idx_quarantine_status ON quarantined_ips(status);
+CREATE INDEX IF NOT EXISTS idx_quarantine_expires ON quarantined_ips(expires_at);
+
 -- NO HARDCODED USERS: Let create_admin.py handle to avoid hash mismatches
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);

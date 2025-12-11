@@ -3,9 +3,11 @@
 // ============================================
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Bell, X, AlertTriangle, Shield, Clock, ExternalLink } from 'lucide-react';
+import { Bell, X, AlertTriangle, Shield, Clock, ShieldOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useWebSocket } from '../../hooks/useWebSocket';
+import { SECURITY_WS_EVENTS, ATTACK_TYPES } from '../../utils/constants';
+import { securityApi } from '../../services/api';
 
 interface ThreatNotification {
     id: string;
@@ -13,21 +15,64 @@ interface ThreatNotification {
     severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
     ai_confidence: number;
     threat_type: string;
+    attack_type?: string;  // For security events
     source_ip?: string;
     message: string;
     timestamp: string;
     read: boolean;
     recommended_action?: string;
+    is_security_alert?: boolean;  // Flag for security middleware alerts
+    can_quarantine?: boolean;  // Show quarantine action
 }
 
 const NotificationBell: React.FC = () => {
     const [notifications, setNotifications] = useState<ThreatNotification[]>([]);
     const [showDrawer, setShowDrawer] = useState(false);
-    const [filter, setFilter] = useState<'all' | 'unread' | 'critical'>('all');
+    const [filter, setFilter] = useState<'all' | 'unread' | 'critical' | 'security'>('all');
+    const [quarantining, setQuarantining] = useState<string | null>(null);
     const drawerRef = useRef<HTMLDivElement>(null);
     const audioRef = useRef<HTMLAudioElement>(null);
     const navigate = useNavigate();
     const { on } = useWebSocket();
+
+    // Get attack type label
+    const getAttackTypeLabel = (attackType: string): string => {
+        const attackTypeEntry = Object.values(ATTACK_TYPES).find(at => at.value === attackType);
+        return attackTypeEntry?.label || attackType.replace(/_/g, ' ').toUpperCase();
+    };
+
+    // Handle quarantine action
+    const handleQuarantine = async (notification: ThreatNotification, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!notification.source_ip) return;
+
+        setQuarantining(notification.id);
+        try {
+            await securityApi.quarantineIP({
+                ip_address: notification.source_ip,
+                reason: `${notification.threat_type || notification.attack_type} - via notification`,
+                attack_type: notification.attack_type || 'manual',
+                threat_level: notification.severity === 'CRITICAL' ? 'critical' :
+                    notification.severity === 'HIGH' ? 'high' : 'medium',
+            });
+
+            // Update notification to show quarantined
+            setNotifications(prev => prev.map(n =>
+                n.id === notification.id
+                    ? { ...n, recommended_action: `✓ IP ${notification.source_ip} quarantined`, can_quarantine: false }
+                    : n
+            ));
+        } catch (error) {
+            console.error('Failed to quarantine IP:', error);
+            setNotifications(prev => prev.map(n =>
+                n.id === notification.id
+                    ? { ...n, recommended_action: `⚠️ Quarantine failed - try manually` }
+                    : n
+            ));
+        } finally {
+            setQuarantining(null);
+        }
+    };
 
     // Subscribe to real-time incident events
     useEffect(() => {
@@ -39,16 +84,19 @@ const NotificationBell: React.FC = () => {
                     incident_id: data.incident_id || data.id,
                     severity: data.severity,
                     ai_confidence: data.ai_confidence || data.confidence || 0.5,
-                    threat_type: data.threat_type || 'Unknown Threat',
+                    threat_type: data.threat_type || data.description || 'Unknown Threat',
+                    attack_type: data.attack_type,
                     source_ip: data.source_ip,
                     message: data.message || `${data.severity} threat detected`,
                     timestamp: new Date().toISOString(),
                     read: false,
                     recommended_action: data.recommended_action,
+                    is_security_alert: false,
+                    can_quarantine: !!data.source_ip,
                 };
-                
+
                 setNotifications(prev => [notification, ...prev]);
-                
+
                 // Play sound for critical alerts
                 if (data.severity === 'CRITICAL' && audioRef.current) {
                     audioRef.current.play().catch(err => console.log('Audio play failed:', err));
@@ -56,12 +104,82 @@ const NotificationBell: React.FC = () => {
             }
         };
 
+        // Handle security attack events
+        const handleSecurityAlert = (data: any) => {
+            console.log('[NotificationBell] 🛡️ Security alert received:', data);
+
+            const severityMap: Record<string, 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'> = {
+                'critical': 'CRITICAL',
+                'high': 'HIGH',
+                'medium': 'MEDIUM',
+                'low': 'LOW',
+            };
+
+            const severity = severityMap[data.threat_level?.toLowerCase()] ||
+                data.severity || 'HIGH';
+
+            const notification: ThreatNotification = {
+                id: `security-${Date.now()}-${Math.random()}`,
+                incident_id: data.incident_id || '',
+                severity,
+                ai_confidence: 0.95,  // Security middleware has high confidence
+                threat_type: getAttackTypeLabel(data.attack_type || 'unknown'),
+                attack_type: data.attack_type,
+                source_ip: data.source_ip,
+                message: data.description || `🛡️ ${data.attack_type?.replace(/_/g, ' ')} attack detected from ${data.source_ip || 'unknown IP'}`,
+                timestamp: data.timestamp || new Date().toISOString(),
+                read: false,
+                recommended_action: data.recommended_action ||
+                    (severity === 'CRITICAL' ? 'Immediate action: Quarantine IP' : 'Review and investigate'),
+                is_security_alert: true,
+                can_quarantine: !!data.source_ip,
+            };
+
+            setNotifications(prev => [notification, ...prev]);
+
+            // Always play sound for security alerts
+            if (audioRef.current) {
+                audioRef.current.play().catch(err => console.log('Audio play failed:', err));
+            }
+        };
+
+        // Handle IP quarantined events
+        const handleIPQuarantined = (data: any) => {
+            console.log('[NotificationBell] IP quarantined:', data);
+            const notification: ThreatNotification = {
+                id: `quarantine-${Date.now()}`,
+                incident_id: data.incident_id || '',
+                severity: 'HIGH',
+                ai_confidence: 1.0,
+                threat_type: 'IP Quarantined',
+                attack_type: data.attack_type,
+                source_ip: data.ip,
+                message: `IP ${data.ip} has been quarantined (${data.reason || data.attack_type})`,
+                timestamp: data.timestamp || new Date().toISOString(),
+                read: false,
+                recommended_action: `Quarantined by ${data.quarantined_by || 'system'}`,
+                is_security_alert: true,
+                can_quarantine: false,
+            };
+            setNotifications(prev => [notification, ...prev]);
+        };
+
         const unsubIncident = on('incident.received', handleNewIncident);
         const unsubTriaged = on('incident.triaged', handleNewIncident);
+        const unsubSecurityAttack = on(SECURITY_WS_EVENTS.ATTACK_DETECTED, handleSecurityAlert);
+        const unsubQuarantined = on(SECURITY_WS_EVENTS.IP_QUARANTINED, handleIPQuarantined);
+        const unsubBruteForce = on(SECURITY_WS_EVENTS.BRUTE_FORCE_DETECTED, handleSecurityAlert);
+        const unsubSqli = on(SECURITY_WS_EVENTS.SQLI_DETECTED, handleSecurityAlert);
+        const unsubSsrf = on(SECURITY_WS_EVENTS.SSRF_BLOCKED, handleSecurityAlert);
 
         return () => {
             unsubIncident?.();
             unsubTriaged?.();
+            unsubSecurityAttack?.();
+            unsubQuarantined?.();
+            unsubBruteForce?.();
+            unsubSqli?.();
+            unsubSsrf?.();
         };
     }, [on]);
 
@@ -93,7 +211,7 @@ const NotificationBell: React.FC = () => {
     };
 
     const markAsRead = (id: string) => {
-        setNotifications(prev => 
+        setNotifications(prev =>
             prev.map(n => n.id === id ? { ...n, read: true } : n)
         );
     };
@@ -119,8 +237,11 @@ const NotificationBell: React.FC = () => {
     const filteredNotifications = notifications.filter(n => {
         if (filter === 'unread') return !n.read;
         if (filter === 'critical') return n.severity === 'CRITICAL';
+        if (filter === 'security') return n.is_security_alert;
         return true;
     });
+
+    const securityCount = notifications.filter(n => n.is_security_alert && !n.read).length;
 
     const formatTimeAgo = (timestamp: string) => {
         const seconds = Math.floor((Date.now() - new Date(timestamp).getTime()) / 1000);
@@ -141,8 +262,8 @@ const NotificationBell: React.FC = () => {
                 className="relative p-2 hover:bg-dark-bg/50 rounded-lg transition-colors group"
                 aria-label="Notifications"
             >
-                <Bell 
-                    size={24} 
+                <Bell
+                    size={24}
                     className={`transition-colors ${unreadCount > 0 ? 'text-accent-teal animate-pulse' : 'text-accent-teal group-hover:text-accent-teal/80'}`}
                 />
                 {unreadCount > 0 && (
@@ -186,20 +307,22 @@ const NotificationBell: React.FC = () => {
                         </div>
 
                         {/* Filter Tabs */}
-                        <div className="flex gap-2">
-                            {(['all', 'unread', 'critical'] as const).map(f => (
+                        <div className="flex gap-2 flex-wrap">
+                            {(['all', 'unread', 'critical', 'security'] as const).map(f => (
                                 <button
                                     key={f}
                                     onClick={() => setFilter(f)}
-                                    className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
-                                        filter === f
-                                            ? 'bg-accent-teal text-dark-bg'
-                                            : 'bg-dark-bg text-text-secondary hover:bg-dark-bg/70'
-                                    }`}
+                                    className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${filter === f
+                                        ? f === 'security'
+                                            ? 'bg-purple-500 text-white'
+                                            : 'bg-accent-teal text-dark-bg'
+                                        : 'bg-dark-bg text-text-secondary hover:bg-dark-bg/70'
+                                        }`}
                                 >
-                                    {f.charAt(0).toUpperCase() + f.slice(1)}
+                                    {f === 'security' ? '🛡️ Security' : f.charAt(0).toUpperCase() + f.slice(1)}
                                     {f === 'unread' && unreadCount > 0 && ` (${unreadCount})`}
                                     {f === 'critical' && criticalCount > 0 && ` (${criticalCount})`}
+                                    {f === 'security' && securityCount > 0 && ` (${securityCount})`}
                                 </button>
                             ))}
                         </div>
@@ -217,13 +340,12 @@ const NotificationBell: React.FC = () => {
                                 {filteredNotifications.map(notification => {
                                     const config = getSeverityConfig(notification.severity);
                                     const Icon = config.icon;
-                                    
+
                                     return (
                                         <div
                                             key={notification.id}
-                                            className={`p-4 hover:bg-dark-bg/50 transition-colors cursor-pointer ${
-                                                !notification.read ? 'bg-accent-teal/5' : ''
-                                            }`}
+                                            className={`p-4 hover:bg-dark-bg/50 transition-colors cursor-pointer ${!notification.read ? 'bg-accent-teal/5' : ''
+                                                }`}
                                             onClick={() => viewIncident(notification)}
                                         >
                                             <div className="flex items-start gap-3">
@@ -242,11 +364,11 @@ const NotificationBell: React.FC = () => {
                                                             <span className="w-2 h-2 bg-accent-teal rounded-full" />
                                                         )}
                                                     </div>
-                                                    
+
                                                     <p className="text-sm text-text-primary font-medium mb-1">
                                                         {notification.threat_type}
                                                     </p>
-                                                    
+
                                                     <p className="text-xs text-text-secondary mb-2">
                                                         {notification.message}
                                                     </p>
@@ -263,10 +385,9 @@ const NotificationBell: React.FC = () => {
                                                                 <Clock size={12} />
                                                                 {formatTimeAgo(notification.timestamp)}
                                                             </span>
-                                                            <span className={`font-semibold ${
-                                                                notification.ai_confidence >= 0.8 ? 'text-green-400' :
+                                                            <span className={`font-semibold ${notification.ai_confidence >= 0.8 ? 'text-green-400' :
                                                                 notification.ai_confidence >= 0.6 ? 'text-yellow-400' : 'text-orange-400'
-                                                            }`}>
+                                                                }`}>
                                                                 {(notification.ai_confidence * 100).toFixed(0)}% confidence
                                                             </span>
                                                         </div>
@@ -284,6 +405,31 @@ const NotificationBell: React.FC = () => {
                                                     {notification.recommended_action && (
                                                         <div className="mt-2 px-2 py-1 bg-accent-teal/10 rounded text-xs text-accent-teal">
                                                             → {notification.recommended_action}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Quick Quarantine Button */}
+                                                    {notification.can_quarantine && notification.source_ip && (
+                                                        <button
+                                                            onClick={(e) => handleQuarantine(notification, e)}
+                                                            disabled={quarantining === notification.id}
+                                                            className={`mt-2 w-full px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-all ${quarantining === notification.id
+                                                                ? 'bg-gray-500/20 text-gray-400 cursor-wait'
+                                                                : 'bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30'
+                                                                }`}
+                                                        >
+                                                            <ShieldOff size={14} />
+                                                            {quarantining === notification.id
+                                                                ? 'Quarantining...'
+                                                                : `Quarantine IP ${notification.source_ip}`}
+                                                        </button>
+                                                    )}
+
+                                                    {/* Security Alert Badge */}
+                                                    {notification.is_security_alert && (
+                                                        <div className="mt-2 flex items-center gap-1 text-xs text-purple-400">
+                                                            <Shield size={12} />
+                                                            Security Middleware Alert
                                                         </div>
                                                     )}
                                                 </div>

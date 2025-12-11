@@ -87,6 +87,9 @@ AsyncSessionLocal = sessionmaker(
     expire_on_commit=False,
 )
 
+# Alias for backwards compatibility with other modules
+async_session_factory = AsyncSessionLocal
+
 Base = declarative_base()
 
 

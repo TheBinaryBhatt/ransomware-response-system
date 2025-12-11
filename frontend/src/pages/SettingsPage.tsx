@@ -20,6 +20,7 @@ import {
     LogOut
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import AnimatedBackground from '../components/Common/AnimatedBackground';
 
 type TabType = 'general' | 'profile' | 'notifications' | 'security' | 'api';
 
@@ -321,70 +322,81 @@ const SettingsPage: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen bg-dark-bg">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-dark-surface via-dark-surface to-dark-bg border-b border-accent-teal/10">
-                <div className="px-6 py-6">
-                    <div className="flex items-center justify-between mb-6">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 bg-gradient-to-br from-accent-teal/20 to-purple-500/20 rounded-lg">
-                                <Settings size={24} className="text-accent-teal" />
-                            </div>
-                            <div>
-                                <h1 className="text-3xl font-bold text-text-primary">Settings</h1>
-                                <p className="text-text-secondary">Manage application configuration and preferences</p>
-                            </div>
-                        </div>
-                        <button
-                            onClick={handleSave}
-                            disabled={loading}
-                            className="flex items-center gap-2 px-6 py-2 bg-accent-teal hover:bg-accent-teal/90 text-dark-bg font-bold rounded-lg transition-all disabled:opacity-50"
-                        >
-                            {loading ? (
-                                <div className="w-5 h-5 border-2 border-dark-bg border-t-transparent rounded-full animate-spin" />
-                            ) : (
-                                <Save size={18} />
-                            )}
-                            Save Changes
-                        </button>
-                    </div>
-
-                    {/* Tabs */}
-                    <div className="flex gap-2 overflow-x-auto pb-1">
-                        {[
-                            { id: 'general', label: 'General', icon: Settings },
-                            { id: 'profile', label: 'Profile', icon: User },
-                            { id: 'notifications', label: 'Notifications', icon: Bell },
-                            { id: 'security', label: 'Security', icon: Shield },
-                            { id: 'api', label: 'API Keys', icon: Key },
-                        ].map((tab) => (
-                            <button
-                                key={tab.id}
-                                onClick={() => setActiveTab(tab.id as TabType)}
-                                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all whitespace-nowrap ${activeTab === tab.id
-                                        ? 'bg-accent-teal/10 text-accent-teal border border-accent-teal/20'
-                                        : 'text-text-secondary hover:text-text-primary hover:bg-dark-surface'
-                                    }`}
-                            >
-                                <tab.icon size={16} />
-                                {tab.label}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            </div>
+        <div className="min-h-screen relative overflow-hidden" style={{
+            background: 'radial-gradient(ellipse at center, #0a1628 0%, #020817 100%)'
+        }}>
+            {/* Animated Network Background */}
+            <AnimatedBackground opacity={0.3} lineCount={6} nodeCount={10} starCount={40} />
 
             {/* Content */}
-            <div className="p-6 max-w-4xl mx-auto">
-                {successMessage && (
-                    <div className="mb-6 p-4 bg-green-500/10 border border-green-500/20 rounded-lg text-green-400 flex items-center gap-2 animate-fade-in">
-                        <div className="w-2 h-2 bg-green-400 rounded-full" />
-                        {successMessage}
-                    </div>
-                )}
+            <div className="relative z-10">
+                {/* Header */}
+                <div className="border-b border-blue-500/10" style={{
+                    backgroundColor: 'rgba(37, 39, 39, 0.6)',
+                    backdropFilter: 'blur(10px)'
+                }}>
+                    <div className="px-6 py-6">
+                        <div className="flex items-center justify-between mb-6">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-gradient-to-br from-accent-teal/20 to-purple-500/20 rounded-lg">
+                                    <Settings size={24} className="text-accent-teal" />
+                                </div>
+                                <div>
+                                    <h1 className="text-3xl font-bold text-text-primary">Settings</h1>
+                                    <p className="text-text-secondary">Manage application configuration and preferences</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={handleSave}
+                                disabled={loading}
+                                className="flex items-center gap-2 px-6 py-2 bg-accent-teal hover:bg-accent-teal/90 text-dark-bg font-bold rounded-lg transition-all disabled:opacity-50"
+                            >
+                                {loading ? (
+                                    <div className="w-5 h-5 border-2 border-dark-bg border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                    <Save size={18} />
+                                )}
+                                Save Changes
+                            </button>
+                        </div>
 
-                <div className="animate-fade-in">
-                    {renderTabContent()}
+                        {/* Tabs */}
+                        <div className="flex gap-2 overflow-x-auto pb-1">
+                            {[
+                                { id: 'general', label: 'General', icon: Settings },
+                                { id: 'profile', label: 'Profile', icon: User },
+                                { id: 'notifications', label: 'Notifications', icon: Bell },
+                                { id: 'security', label: 'Security', icon: Shield },
+                                { id: 'api', label: 'API Keys', icon: Key },
+                            ].map((tab) => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id as TabType)}
+                                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all whitespace-nowrap ${activeTab === tab.id
+                                        ? 'bg-accent-teal/10 text-accent-teal border border-accent-teal/20'
+                                        : 'text-text-secondary hover:text-text-primary hover:bg-dark-surface'
+                                        }`}
+                                >
+                                    <tab.icon size={16} />
+                                    {tab.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Content */}
+                <div className="p-6 max-w-4xl mx-auto">
+                    {successMessage && (
+                        <div className="mb-6 p-4 bg-green-500/10 border border-green-500/20 rounded-lg text-green-400 flex items-center gap-2 animate-fade-in">
+                            <div className="w-2 h-2 bg-green-400 rounded-full" />
+                            {successMessage}
+                        </div>
+                    )}
+
+                    <div className="animate-fade-in">
+                        {renderTabContent()}
+                    </div>
                 </div>
             </div>
         </div>
@@ -392,3 +404,4 @@ const SettingsPage: React.FC = () => {
 };
 
 export default SettingsPage;
+

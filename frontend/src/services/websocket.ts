@@ -3,7 +3,7 @@
 // ============================================
 
 import { io, Socket } from 'socket.io-client';
-import { WS_URL, WS_EVENTS } from '../utils/constants';
+import { WS_URL, WS_EVENTS, SECURITY_WS_EVENTS } from '../utils/constants';
 import type { WebSocketEventType } from '../types';
 
 class WebSocketService {
@@ -77,6 +77,20 @@ class WebSocketService {
                 console.log(`[WebSocket] Event received: ${event}`, data);
                 this.notifyHandlers(event, data);
             });
+        });
+
+        // Listen to all security events
+        Object.values(SECURITY_WS_EVENTS).forEach((event) => {
+            this.socket!.on(event, (data: any) => {
+                console.log(`[WebSocket] 🛡️ Security event: ${event}`, data);
+                this.notifyHandlers(event, data);
+            });
+        });
+
+        // Generic incident_update event listener
+        this.socket.on('incident_update', (data: any) => {
+            console.log('[WebSocket] Incident update received:', data);
+            this.notifyHandlers('incident_update', data);
         });
 
         // Generic event listener for any custom events

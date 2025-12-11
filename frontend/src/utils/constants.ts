@@ -60,6 +60,40 @@ export const WS_EVENTS = {
     AUDIT_LOG_CREATED: 'audit.log.created',
 } as const;
 
+// Security WebSocket Events
+export const SECURITY_WS_EVENTS = {
+    ATTACK_DETECTED: 'security.attack_detected',
+    IP_QUARANTINED: 'security.ip_quarantined',
+    IP_RELEASED: 'security.ip_released',
+    BRUTE_FORCE_DETECTED: 'security.brute_force_detected',
+    SSRF_BLOCKED: 'security.ssrf_blocked',
+    SQLI_DETECTED: 'security.sqli_detected',
+} as const;
+
+// Attack Types
+export const ATTACK_TYPES = {
+    SQL_INJECTION: { value: 'sql_injection', label: 'SQL Injection', severity: 'CRITICAL' },
+    BRUTE_FORCE: { value: 'brute_force', label: 'Brute Force', severity: 'HIGH' },
+    SSRF: { value: 'ssrf', label: 'Server-Side Request Forgery', severity: 'CRITICAL' },
+    XSS: { value: 'xss', label: 'Cross-Site Scripting', severity: 'HIGH' },
+    DIRECTORY_TRAVERSAL: { value: 'directory_traversal', label: 'Directory Traversal', severity: 'HIGH' },
+    COMMAND_INJECTION: { value: 'command_injection', label: 'Command Injection', severity: 'CRITICAL' },
+    BROKEN_ACCESS: { value: 'broken_access', label: 'Broken Access Control', severity: 'MEDIUM' },
+    SUSPICIOUS_UA: { value: 'suspicious_user_agent', label: 'Suspicious User Agent', severity: 'LOW' },
+    MALFORMED_INPUT: { value: 'malformed_input', label: 'Malformed Input', severity: 'MEDIUM' },
+    RECONNAISSANCE: { value: 'reconnaissance', label: 'Reconnaissance', severity: 'MEDIUM' },
+    RANSOMWARE: { value: 'ransomware_behavior', label: 'Ransomware Behavior', severity: 'CRITICAL' },
+    PRIVILEGE_ESCALATION: { value: 'privilege_escalation', label: 'Privilege Escalation', severity: 'CRITICAL' },
+} as const;
+
+// Threat Levels for Quarantine Duration
+export const THREAT_LEVELS = {
+    CRITICAL: { value: 'critical', label: 'Critical (Permanent Ban)', duration: 'Permanent' },
+    HIGH: { value: 'high', label: 'High (7 Days)', duration: '7 days' },
+    MEDIUM: { value: 'medium', label: 'Medium (24 Hours)', duration: '24 hours' },
+    LOW: { value: 'low', label: 'Low (1 Hour)', duration: '1 hour' },
+} as const;
+
 // Notification Duration (ms)
 export const NOTIFICATION_DURATION = {
     SUCCESS: 3000,
@@ -88,4 +122,6 @@ export const ROUTES = {
     WORKFLOWS: '/workflows',
     AUDIT_LOGS: '/audit-logs',
     SETTINGS: '/settings',
+    QUARANTINE: '/quarantine',
 } as const;
+

@@ -10,6 +10,7 @@ import api from '../services/api';
 import StatCard from './Dashboard/StatCard';
 import FilterPanel from './Dashboard/FilterPanel';
 import LoadingSpinner from './Common/LoadingSpinner';
+import AnimatedBackground from './Common/AnimatedBackground';
 import { Server, Activity, Database, MessageSquare, Cpu, HardDrive, AlertTriangle } from 'lucide-react';
 import {
     BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -149,213 +150,223 @@ const Dashboard: React.FC = () => {
     }
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            {/* Title Section - Full Width */}
-            <div className="col-span-1 lg:col-span-4 mb-2">
-                <h1 className="text-3xl font-bold text-text-primary mb-2">
-                    Security Operations Dashboard
-                </h1>
-                <p className="text-text-secondary">Real-time threat monitoring & response</p>
-            </div>
+        <div className="min-h-screen relative overflow-hidden" style={{
+            background: 'radial-gradient(ellipse at center, #0a1628 0%, #020817 100%)'
+        }}>
+            {/* Animated Network Background */}
+            <AnimatedBackground opacity={0.3} lineCount={8} nodeCount={12} starCount={50} />
 
-            {/* Left Sidebar - Stats Stacked Vertically */}
-            <div className="lg:col-span-1">
-                <div className="space-y-4">
-                    <StatCard
-                        title="Total Incidents"
-                        value={totalIncidents}
-                        icon="shield"
-                        color="teal"
-                        isLoading={incidentsLoading}
-                        onClick={() => navigate('/incidents')}
-                    />
-                    <StatCard
-                        title="Critical Alerts"
-                        value={criticalAlerts}
-                        icon="alert"
-                        color="red"
-                        isPulsing={criticalAlerts > 0}
-                        isLoading={incidentsLoading}
-                        onClick={() => navigate('/incidents?severity=CRITICAL')}
-                    />
-                    <StatCard
-                        title="Avg Response Time"
-                        value={`${avgResponseTime.toFixed(1)}s`}
-                        icon="timer"
-                        color={avgResponseTime < 60 ? 'green' : avgResponseTime < 120 ? 'amber' : 'red'}
-                        isLoading={incidentsLoading}
-                    />
-                    <StatCard
-                        title="Success Rate"
-                        value={`${successRate.toFixed(1)}%`}
-                        icon="target"
-                        color={successRate >= 80 ? 'green' : successRate >= 60 ? 'amber' : 'red'}
-                        progress={successRate}
-                        isLoading={incidentsLoading}
-                    />
-                </div>
-            </div>
+            {/* Content */}
+            <div className="relative z-10 p-6">
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                    {/* Title Section - Full Width */}
+                    <div className="col-span-1 lg:col-span-4 mb-2">
+                        <h1 className="text-3xl font-bold text-text-primary mb-2">
+                            Security Operations Dashboard
+                        </h1>
+                        <p className="text-text-secondary">Real-time threat monitoring & response</p>
+                    </div>
 
-            {/* Main Content - Incident Table */}
-            <div className="lg:col-span-2">
-                <div className="bg-dark-surface rounded-lg border border-accent-teal/10 p-6 shadow-lg h-full">
-                    <h2 className="text-xl font-bold text-text-primary mb-6">Recent Incidents</h2>
-                    {!incidents || incidents.length === 0 ? (
-                        <div className="text-center py-12 text-text-secondary">
-                            <Server size={48} className="mx-auto mb-4 opacity-50" />
-                            <p>No incidents detected</p>
+                    {/* Left Sidebar - Stats Stacked Vertically */}
+                    <div className="lg:col-span-1">
+                        <div className="space-y-4">
+                            <StatCard
+                                title="Total Incidents"
+                                value={totalIncidents}
+                                icon="shield"
+                                color="teal"
+                                isLoading={incidentsLoading}
+                                onClick={() => navigate('/incidents')}
+                            />
+                            <StatCard
+                                title="Critical Alerts"
+                                value={criticalAlerts}
+                                icon="alert"
+                                color="red"
+                                isPulsing={criticalAlerts > 0}
+                                isLoading={incidentsLoading}
+                                onClick={() => navigate('/incidents?severity=CRITICAL')}
+                            />
+                            <StatCard
+                                title="Avg Response Time"
+                                value={`${avgResponseTime.toFixed(1)}s`}
+                                icon="timer"
+                                color={avgResponseTime < 60 ? 'green' : avgResponseTime < 120 ? 'amber' : 'red'}
+                                isLoading={incidentsLoading}
+                            />
+                            <StatCard
+                                title="Success Rate"
+                                value={`${successRate.toFixed(1)}%`}
+                                icon="target"
+                                color={successRate >= 80 ? 'green' : successRate >= 60 ? 'amber' : 'red'}
+                                progress={successRate}
+                                isLoading={incidentsLoading}
+                            />
                         </div>
-                    ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full">
-                                <thead>
-                                    <tr className="text-left text-text-secondary text-sm border-b border-accent-teal/10">
-                                        <th className="pb-3 font-medium">Incident ID</th>
-                                        <th className="pb-3 font-medium">Source IP</th>
-                                        <th className="pb-3 font-medium">Severity</th>
-                                        <th className="pb-3 font-medium">Status</th>
-                                        <th className="pb-3 font-medium">Created</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="text-text-primary">
-                                    {incidents.slice(0, 10).map((incident) => (
-                                        <tr
-                                            key={incident.incident_id}
-                                            className="border-b border-accent-teal/5 hover:bg-accent-teal/5 transition-colors cursor-pointer"
-                                            onClick={() => navigate('/incidents')}
-                                        >
-                                            <td className="py-4 font-mono text-sm text-accent-teal">
-                                                {incident.incident_id.slice(0, 8)}...
-                                            </td>
-                                            <td className="py-4 font-mono text-sm">{incident.source_ip}</td>
-                                            <td className="py-4"><SeverityBadge severity={incident.severity} /></td>
-                                            <td className="py-4"><StatusBadge status={incident.status} /></td>
-                                            <td className="py-4 text-sm text-text-secondary">
-                                                {new Date(incident.created_at).toLocaleString()}
-                                            </td>
-                                        </tr>
+                    </div>
+
+                    {/* Main Content - Incident Table */}
+                    <div className="lg:col-span-2">
+                        <div className="bg-dark-surface rounded-lg border border-accent-teal/10 p-6 shadow-lg h-full">
+                            <h2 className="text-xl font-bold text-text-primary mb-6">Recent Incidents</h2>
+                            {!incidents || incidents.length === 0 ? (
+                                <div className="text-center py-12 text-text-secondary">
+                                    <Server size={48} className="mx-auto mb-4 opacity-50" />
+                                    <p>No incidents detected</p>
+                                </div>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full">
+                                        <thead>
+                                            <tr className="text-left text-text-secondary text-sm border-b border-accent-teal/10">
+                                                <th className="pb-3 font-medium">Incident ID</th>
+                                                <th className="pb-3 font-medium">Source IP</th>
+                                                <th className="pb-3 font-medium">Severity</th>
+                                                <th className="pb-3 font-medium">Status</th>
+                                                <th className="pb-3 font-medium">Created</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="text-text-primary">
+                                            {incidents.slice(0, 10).map((incident) => (
+                                                <tr
+                                                    key={incident.incident_id}
+                                                    className="border-b border-accent-teal/5 hover:bg-accent-teal/5 transition-colors cursor-pointer"
+                                                    onClick={() => navigate('/incidents')}
+                                                >
+                                                    <td className="py-4 font-mono text-sm text-accent-teal">
+                                                        {incident.incident_id.slice(0, 8)}...
+                                                    </td>
+                                                    <td className="py-4 font-mono text-sm">{incident.source_ip}</td>
+                                                    <td className="py-4"><SeverityBadge severity={incident.severity} /></td>
+                                                    <td className="py-4"><StatusBadge status={incident.status} /></td>
+                                                    <td className="py-4 text-sm text-text-secondary">
+                                                        {new Date(incident.created_at).toLocaleString()}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Right Sidebar - Filters */}
+                    <div className="lg:col-span-1">
+                        <FilterPanel
+                            onStatusChange={setSelectedStatuses}
+                            onThreatTypeChange={setSelectedThreatTypes}
+                            onSearchChange={setSearchQuery}
+                        />
+                    </div>
+
+                    {/* Charts Section - Full Width Below 3-Column Layout */}
+                    <div className="col-span-1 lg:col-span-4">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            {/* Incident Volume Chart */}
+                            <div className="bg-dark-surface rounded-lg border border-accent-teal/10 p-6 shadow-lg">
+                                <h2 className="text-xl font-bold text-text-primary mb-6">
+                                    Incident Volume (Weekly)
+                                </h2>
+                                <div className="h-80">
+                                    {weeklyVolume.length > 0 ? (
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <AreaChart data={weeklyVolume}>
+                                                <defs>
+                                                    <linearGradient id="colorIncidents" x1="0" y1="0" x2="0" y2="1">
+                                                        <stop offset="5%" stopColor="#32B8C6" stopOpacity={0.3} />
+                                                        <stop offset="95%" stopColor="#32B8C6" stopOpacity={0} />
+                                                    </linearGradient>
+                                                </defs>
+                                                <XAxis dataKey="name" stroke="#6B7280" fontSize={12} />
+                                                <YAxis stroke="#6B7280" fontSize={12} />
+                                                <Tooltip
+                                                    contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #32B8C6', borderRadius: '8px' }}
+                                                    labelStyle={{ color: '#F9FAFB' }}
+                                                />
+                                                <Area type="monotone" dataKey="incidents" stroke="#32B8C6" fillOpacity={1} fill="url(#colorIncidents)" strokeWidth={2} />
+                                            </AreaChart>
+                                        </ResponsiveContainer>
+                                    ) : (
+                                        <div className="flex items-center justify-center h-full text-text-secondary">
+                                            <Activity size={48} className="opacity-50" />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Threat Breakdown Chart */}
+                            <div className="bg-dark-surface rounded-lg border border-accent-teal/10 p-6 shadow-lg">
+                                <h2 className="text-xl font-bold text-text-primary mb-6">Threat Breakdown</h2>
+                                <div className="h-80">
+                                    {threatBreakdown.length > 0 ? (
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <PieChart>
+                                                <Pie
+                                                    data={threatBreakdown}
+                                                    cx="50%"
+                                                    cy="50%"
+                                                    innerRadius={60}
+                                                    outerRadius={100}
+                                                    paddingAngle={2}
+                                                    dataKey="value"
+                                                    label={({ name, percent }) => `${name} ${(Number(percent || 0) * 100).toFixed(0)}%`}
+                                                    labelLine={false}
+                                                >
+                                                    {threatBreakdown.map((_, index) => (
+                                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                                    ))}
+                                                </Pie>
+                                                <Tooltip
+                                                    contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #32B8C6', borderRadius: '8px' }}
+                                                />
+                                                <Legend />
+                                            </PieChart>
+                                        </ResponsiveContainer>
+                                    ) : (
+                                        <div className="flex items-center justify-center h-full text-text-secondary">
+                                            <Database size={48} className="opacity-50" />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Status Distribution Chart */}
+                            <div className="bg-dark-surface rounded-lg border border-accent-teal/10 p-6 shadow-lg">
+                                <h2 className="text-xl font-bold text-text-primary mb-6">Status Distribution</h2>
+                                <div className="h-80">
+                                    {statusDistribution.length > 0 ? (
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart data={statusDistribution} layout="vertical">
+                                                <XAxis type="number" stroke="#6B7280" fontSize={12} />
+                                                <YAxis type="category" dataKey="name" stroke="#6B7280" fontSize={12} width={100} />
+                                                <Tooltip
+                                                    contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #32B8C6', borderRadius: '8px' }}
+                                                />
+                                                <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                                                    {statusDistribution.map((entry, index) => (
+                                                        <Cell key={`cell-${index}`} fill={STATUS_COLORS[entry.name] || COLORS[index % COLORS.length]} />
+                                                    ))}
+                                                </Bar>
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    ) : (
+                                        <div className="flex items-center justify-center h-full text-text-secondary">
+                                            <Cpu size={48} className="opacity-50" />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* System Health */}
+                            <div className="bg-dark-surface rounded-lg border border-accent-teal/10 p-6 shadow-lg">
+                                <h2 className="text-xl font-bold text-text-primary mb-6">System Health</h2>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    {healthData.map((service: SystemHealth, index: number) => (
+                                        <SystemHealthCard key={index} service={service} />
                                     ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* Right Sidebar - Filters */}
-            <div className="lg:col-span-1">
-                <FilterPanel
-                    onStatusChange={setSelectedStatuses}
-                    onThreatTypeChange={setSelectedThreatTypes}
-                    onSearchChange={setSearchQuery}
-                />
-            </div>
-
-            {/* Charts Section - Full Width Below 3-Column Layout */}
-            <div className="col-span-1 lg:col-span-4">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Incident Volume Chart */}
-                    <div className="bg-dark-surface rounded-lg border border-accent-teal/10 p-6 shadow-lg">
-                        <h2 className="text-xl font-bold text-text-primary mb-6">
-                            Incident Volume (Weekly)
-                        </h2>
-                        <div className="h-80">
-                            {weeklyVolume.length > 0 ? (
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <AreaChart data={weeklyVolume}>
-                                        <defs>
-                                            <linearGradient id="colorIncidents" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="5%" stopColor="#32B8C6" stopOpacity={0.3} />
-                                                <stop offset="95%" stopColor="#32B8C6" stopOpacity={0} />
-                                            </linearGradient>
-                                        </defs>
-                                        <XAxis dataKey="name" stroke="#6B7280" fontSize={12} />
-                                        <YAxis stroke="#6B7280" fontSize={12} />
-                                        <Tooltip
-                                            contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #32B8C6', borderRadius: '8px' }}
-                                            labelStyle={{ color: '#F9FAFB' }}
-                                        />
-                                        <Area type="monotone" dataKey="incidents" stroke="#32B8C6" fillOpacity={1} fill="url(#colorIncidents)" strokeWidth={2} />
-                                    </AreaChart>
-                                </ResponsiveContainer>
-                            ) : (
-                                <div className="flex items-center justify-center h-full text-text-secondary">
-                                    <Activity size={48} className="opacity-50" />
                                 </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Threat Breakdown Chart */}
-                    <div className="bg-dark-surface rounded-lg border border-accent-teal/10 p-6 shadow-lg">
-                        <h2 className="text-xl font-bold text-text-primary mb-6">Threat Breakdown</h2>
-                        <div className="h-80">
-                            {threatBreakdown.length > 0 ? (
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <PieChart>
-                                        <Pie
-                                            data={threatBreakdown}
-                                            cx="50%"
-                                            cy="50%"
-                                            innerRadius={60}
-                                            outerRadius={100}
-                                            paddingAngle={2}
-                                            dataKey="value"
-                                            label={({ name, percent }) => `${name} ${(Number(percent || 0) * 100).toFixed(0)}%`}
-                                            labelLine={false}
-                                        >
-                                            {threatBreakdown.map((_, index) => (
-                                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                            ))}
-                                        </Pie>
-                                        <Tooltip
-                                            contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #32B8C6', borderRadius: '8px' }}
-                                        />
-                                        <Legend />
-                                    </PieChart>
-                                </ResponsiveContainer>
-                            ) : (
-                                <div className="flex items-center justify-center h-full text-text-secondary">
-                                    <Database size={48} className="opacity-50" />
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Status Distribution Chart */}
-                    <div className="bg-dark-surface rounded-lg border border-accent-teal/10 p-6 shadow-lg">
-                        <h2 className="text-xl font-bold text-text-primary mb-6">Status Distribution</h2>
-                        <div className="h-80">
-                            {statusDistribution.length > 0 ? (
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={statusDistribution} layout="vertical">
-                                        <XAxis type="number" stroke="#6B7280" fontSize={12} />
-                                        <YAxis type="category" dataKey="name" stroke="#6B7280" fontSize={12} width={100} />
-                                        <Tooltip
-                                            contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #32B8C6', borderRadius: '8px' }}
-                                        />
-                                        <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                                            {statusDistribution.map((entry, index) => (
-                                                <Cell key={`cell-${index}`} fill={STATUS_COLORS[entry.name] || COLORS[index % COLORS.length]} />
-                                            ))}
-                                        </Bar>
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            ) : (
-                                <div className="flex items-center justify-center h-full text-text-secondary">
-                                    <Cpu size={48} className="opacity-50" />
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* System Health */}
-                    <div className="bg-dark-surface rounded-lg border border-accent-teal/10 p-6 shadow-lg">
-                        <h2 className="text-xl font-bold text-text-primary mb-6">System Health</h2>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            {healthData.map((service: SystemHealth, index: number) => (
-                                <SystemHealthCard key={index} service={service} />
-                            ))}
+                            </div>
                         </div>
                     </div>
                 </div>

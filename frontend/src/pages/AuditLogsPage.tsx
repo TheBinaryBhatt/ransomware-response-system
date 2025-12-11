@@ -21,6 +21,7 @@ import type {
     ComplianceReport,
     ComplianceReportType
 } from '../types/auditlog';
+import AnimatedBackground from '../components/Common/AnimatedBackground';
 
 // Transform backend audit log format to frontend format
 interface BackendAuditLog {
@@ -330,155 +331,166 @@ const AuditLogsPage: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen bg-dark-bg">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-dark-surface via-dark-surface to-dark-bg border-b border-accent-teal/10">
-                <div className="px-6 py-6">
-                    <div className="flex items-center justify-between mb-6">
-                        <div>
-                            <div className="flex items-center gap-3 mb-2">
-                                <div className="p-2 bg-gradient-to-br from-accent-teal/20 to-purple-500/20 rounded-lg">
-                                    <FileText size={24} className="text-accent-teal" />
-                                </div>
-                                <h1 className="text-3xl font-bold text-text-primary">
-                                    Audit Logs
-                                </h1>
-                            </div>
-                            <p className="text-text-secondary">
-                                Immutable audit trail for compliance and forensics
-                            </p>
-                        </div>
-                        <div className="flex gap-2">
-                            <button
-                                onClick={() => handleExport('csv')}
-                                className="px-4 py-2 bg-dark-bg hover:bg-dark-surface border border-accent-teal/30 rounded-lg text-accent-teal font-semibold text-sm flex items-center gap-2 transition-colors"
-                            >
-                                <Download size={16} />
-                                Export CSV
-                            </button>
-                            <button
-                                onClick={() => handleExport('json')}
-                                className="px-4 py-2 bg-dark-bg hover:bg-dark-surface border border-accent-teal/30 rounded-lg text-accent-teal font-semibold text-sm flex items-center gap-2 transition-colors"
-                            >
-                                <Download size={16} />
-                                Export JSON
-                            </button>
-                            <button
-                                onClick={() => setShowCompliance(true)}
-                                className="px-4 py-2 bg-gradient-to-r from-accent-teal to-accent-teal/80 hover:from-accent-teal/90 rounded-lg text-dark-bg font-bold text-sm flex items-center gap-2 transition-colors shadow-lg shadow-accent-teal/20"
-                            >
-                                <Shield size={16} />
-                                Compliance Report
-                            </button>
-                        </div>
-                    </div>
+        <div className="min-h-screen relative overflow-hidden" style={{
+            background: 'radial-gradient(ellipse at center, #0a1628 0%, #020817 100%)'
+        }}>
+            {/* Animated Network Background */}
+            <AnimatedBackground opacity={0.3} lineCount={6} nodeCount={10} starCount={40} />
 
-                    {/* Stats Cards */}
-                    <div className="grid grid-cols-5 gap-4">
-                        <div className="bg-dark-bg/50 rounded-xl p-4 border border-accent-teal/10">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-accent-teal/10 rounded-lg">
-                                    <FileText size={20} className="text-accent-teal" />
+            {/* Content */}
+            <div className="relative z-10">
+                {/* Header */}
+                <div className="border-b border-blue-500/10" style={{
+                    backgroundColor: 'rgba(37, 39, 39, 0.6)',
+                    backdropFilter: 'blur(10px)'
+                }}>
+                    <div className="px-6 py-6">
+                        <div className="flex items-center justify-between mb-6">
+                            <div>
+                                <div className="flex items-center gap-3 mb-2">
+                                    <div className="p-2 bg-gradient-to-br from-accent-teal/20 to-purple-500/20 rounded-lg">
+                                        <FileText size={24} className="text-accent-teal" />
+                                    </div>
+                                    <h1 className="text-3xl font-bold text-text-primary">
+                                        Audit Logs
+                                    </h1>
                                 </div>
-                                <div>
-                                    <p className="text-text-secondary text-xs">Total Events</p>
-                                    <p className="text-2xl font-bold text-text-primary">{stats.total_events.toLocaleString()}</p>
-                                </div>
+                                <p className="text-text-secondary">
+                                    Immutable audit trail for compliance and forensics
+                                </p>
+                            </div>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => handleExport('csv')}
+                                    className="px-4 py-2 bg-dark-bg hover:bg-dark-surface border border-accent-teal/30 rounded-lg text-accent-teal font-semibold text-sm flex items-center gap-2 transition-colors"
+                                >
+                                    <Download size={16} />
+                                    Export CSV
+                                </button>
+                                <button
+                                    onClick={() => handleExport('json')}
+                                    className="px-4 py-2 bg-dark-bg hover:bg-dark-surface border border-accent-teal/30 rounded-lg text-accent-teal font-semibold text-sm flex items-center gap-2 transition-colors"
+                                >
+                                    <Download size={16} />
+                                    Export JSON
+                                </button>
+                                <button
+                                    onClick={() => setShowCompliance(true)}
+                                    className="px-4 py-2 bg-gradient-to-r from-accent-teal to-accent-teal/80 hover:from-accent-teal/90 rounded-lg text-dark-bg font-bold text-sm flex items-center gap-2 transition-colors shadow-lg shadow-accent-teal/20"
+                                >
+                                    <Shield size={16} />
+                                    Compliance Report
+                                </button>
                             </div>
                         </div>
-                        <div className="bg-dark-bg/50 rounded-xl p-4 border border-accent-teal/10">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-green-500/10 rounded-lg">
-                                    <Clock size={20} className="text-green-400" />
-                                </div>
-                                <div>
-                                    <p className="text-text-secondary text-xs">Today</p>
-                                    <p className="text-2xl font-bold text-green-400">{stats.events_today}</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="bg-dark-bg/50 rounded-xl p-4 border border-accent-teal/10">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-purple-500/10 rounded-lg">
-                                    <TrendingUp size={20} className="text-purple-400" />
-                                </div>
-                                <div>
-                                    <p className="text-text-secondary text-xs">This Week</p>
-                                    <p className="text-2xl font-bold text-purple-400">{stats.events_this_week}</p>
+
+                        {/* Stats Cards */}
+                        <div className="grid grid-cols-5 gap-4">
+                            <div className="bg-dark-bg/50 rounded-xl p-4 border border-accent-teal/10">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-accent-teal/10 rounded-lg">
+                                        <FileText size={20} className="text-accent-teal" />
+                                    </div>
+                                    <div>
+                                        <p className="text-text-secondary text-xs">Total Events</p>
+                                        <p className="text-2xl font-bold text-text-primary">{stats.total_events.toLocaleString()}</p>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        <div className="bg-dark-bg/50 rounded-xl p-4 border border-accent-teal/10">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-red-500/10 rounded-lg">
-                                    <AlertTriangle size={20} className="text-red-400" />
-                                </div>
-                                <div>
-                                    <p className="text-text-secondary text-xs">Failed Events</p>
-                                    <p className="text-2xl font-bold text-red-400">{stats.failed_events}</p>
+                            <div className="bg-dark-bg/50 rounded-xl p-4 border border-accent-teal/10">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-green-500/10 rounded-lg">
+                                        <Clock size={20} className="text-green-400" />
+                                    </div>
+                                    <div>
+                                        <p className="text-text-secondary text-xs">Today</p>
+                                        <p className="text-2xl font-bold text-green-400">{stats.events_today}</p>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        <div className="bg-dark-bg/50 rounded-xl p-4 border border-accent-teal/10">
-                            <div className="flex items-center gap-3">
-                                <div className={`p-2 rounded-lg ${integrity.is_valid ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
-                                    {integrity.is_valid ? (
-                                        <CheckCircle size={20} className="text-green-400" />
-                                    ) : (
+                            <div className="bg-dark-bg/50 rounded-xl p-4 border border-accent-teal/10">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-purple-500/10 rounded-lg">
+                                        <TrendingUp size={20} className="text-purple-400" />
+                                    </div>
+                                    <div>
+                                        <p className="text-text-secondary text-xs">This Week</p>
+                                        <p className="text-2xl font-bold text-purple-400">{stats.events_this_week}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="bg-dark-bg/50 rounded-xl p-4 border border-accent-teal/10">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-red-500/10 rounded-lg">
                                         <AlertTriangle size={20} className="text-red-400" />
-                                    )}
+                                    </div>
+                                    <div>
+                                        <p className="text-text-secondary text-xs">Failed Events</p>
+                                        <p className="text-2xl font-bold text-red-400">{stats.failed_events}</p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p className="text-text-secondary text-xs">Integrity</p>
-                                    <p className={`text-lg font-bold ${integrity.is_valid ? 'text-green-400' : 'text-red-400'}`}>
-                                        {integrity.is_valid ? '✓ Valid' : '✗ Tampered'}
-                                    </p>
+                            </div>
+                            <div className="bg-dark-bg/50 rounded-xl p-4 border border-accent-teal/10">
+                                <div className="flex items-center gap-3">
+                                    <div className={`p-2 rounded-lg ${integrity.is_valid ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
+                                        {integrity.is_valid ? (
+                                            <CheckCircle size={20} className="text-green-400" />
+                                        ) : (
+                                            <AlertTriangle size={20} className="text-red-400" />
+                                        )}
+                                    </div>
+                                    <div>
+                                        <p className="text-text-secondary text-xs">Integrity</p>
+                                        <p className={`text-lg font-bold ${integrity.is_valid ? 'text-green-400' : 'text-red-400'}`}>
+                                            {integrity.is_valid ? '✓ Valid' : '✗ Tampered'}
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            {/* Main Content */}
-            <div className="flex flex-col lg:flex-row gap-6 p-4 lg:p-6 max-w-full">
-                {/* Filters Sidebar */}
-                <div className="w-full lg:w-72 shrink-0">
-                    <AuditFilters
-                        filters={filters}
-                        onFilterChange={handleFilterChange}
-                    />
+                {/* Main Content */}
+                <div className="flex flex-col lg:flex-row gap-6 p-4 lg:p-6 max-w-full">
+                    {/* Filters Sidebar */}
+                    <div className="w-full lg:w-72 shrink-0">
+                        <AuditFilters
+                            filters={filters}
+                            onFilterChange={handleFilterChange}
+                        />
+                    </div>
+
+                    {/* Table */}
+                    <div className="flex-1 min-w-0">
+                        <AuditTable
+                            logs={paginatedLogs}
+                            loading={false}
+                            total={filteredLogs.length}
+                            page={page}
+                            limit={limit}
+                            onPageChange={setPage}
+                            onRowClick={setSelectedLog}
+                        />
+                    </div>
                 </div>
 
-                {/* Table */}
-                <div className="flex-1 min-w-0">
-                    <AuditTable
-                        logs={paginatedLogs}
-                        loading={false}
-                        total={filteredLogs.length}
-                        page={page}
-                        limit={limit}
-                        onPageChange={setPage}
-                        onRowClick={setSelectedLog}
+                {/* Detail Drawer */}
+                {selectedLog && (
+                    <AuditDetail
+                        log={selectedLog}
+                        onClose={() => setSelectedLog(null)}
                     />
-                </div>
+                )}
+
+                {/* Compliance Modal */}
+                {showCompliance && (
+                    <ComplianceModal
+                        onClose={() => setShowCompliance(false)}
+                        onGenerate={handleGenerateReport}
+                    />
+                )}
             </div>
-
-            {/* Detail Drawer */}
-            {selectedLog && (
-                <AuditDetail
-                    log={selectedLog}
-                    onClose={() => setSelectedLog(null)}
-                />
-            )}
-
-            {/* Compliance Modal */}
-            {showCompliance && (
-                <ComplianceModal
-                    onClose={() => setShowCompliance(false)}
-                    onGenerate={handleGenerateReport}
-                />
-            )}
         </div>
     );
 };

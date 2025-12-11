@@ -1,5 +1,6 @@
 // ============================================
-// Animated Network Background - Cybersecurity Theme
+// Animated Network Background - Login Page Theme
+// Blue/Cyan Gradient with Network Lines
 // ============================================
 
 import React from 'react';

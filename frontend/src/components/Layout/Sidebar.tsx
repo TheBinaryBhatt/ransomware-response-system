@@ -9,6 +9,7 @@ import {
     LayoutDashboard,
     Target,
     AlertTriangle,
+    Shield,
     Workflow,
     ScrollText,
     Settings,
@@ -16,7 +17,7 @@ import {
 
 interface NavItem {
     label: string;
-    icon: React.ComponentType<{ size: number; className?: string }>;
+    icon: React.ComponentType<{ size: number; className?: string; style?: React.CSSProperties }>;
     route: string;
 }
 
@@ -24,6 +25,7 @@ const navItems: NavItem[] = [
     { label: 'Dashboard', icon: LayoutDashboard, route: '/dashboard' },
     { label: 'Threat Intel', icon: Target, route: '/threat-intel' },
     { label: 'Incidents', icon: AlertTriangle, route: '/incidents' },
+    { label: 'Quarantine', icon: Shield, route: '/quarantine' },
     { label: 'Workflows', icon: Workflow, route: '/workflows' },
     { label: 'Audit Logs', icon: ScrollText, route: '/audit-logs' },
     { label: 'Settings', icon: Settings, route: '/settings' },

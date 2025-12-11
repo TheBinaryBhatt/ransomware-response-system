@@ -23,7 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel, EmailStr, Field
 
 from core.config import settings
-from core.database import get_db, test_connection
+from core.database import get_db, test_connection, async_session_factory
 from core.models import User, Incident
 from core.rabbitmq_utils import publish_event
 from core.security import (
@@ -33,8 +33,11 @@ from core.security import (
     roles_required,
     get_password_hash,
 )
+from core.quarantine_model import QuarantinedIP
 
 from .event_consumer import start as start_event_bridge, stop as stop_event_bridge
+from .security_middleware import SecurityMiddleware, quarantine_ip, release_ip, get_quarantined_ips
+from .attack_patterns import AttackType, ThreatLevel, get_quarantine_duration
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +86,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Security Middleware for attack detection
+# Note: We pass sio reference after initialization
+security_middleware = SecurityMiddleware(app, sio=sio)
 
 # -------------------------------------------------
 # Internal service URLs
@@ -710,6 +717,255 @@ async def disconnect(sid):
 async def join_room(sid, room):
     await sio.enter_room(sid, room)
     logger.info(f"[gateway] Client {sid} joined {room}")
+
+
+# -------------------------------------------------
+# Security / Quarantine API
+# -------------------------------------------------
+class QuarantineRequest(BaseModel):
+    ip_address: str = Field(..., min_length=7, max_length=45)
+    reason: str = Field(..., min_length=1, max_length=500)
+    attack_type: str = Field(default="manual")
+    threat_level: str = Field(default="high")  # critical, high, medium, low
+    duration_hours: Optional[int] = None  # None = use threat-level based duration
+
+
+@app.get("/api/v1/security/quarantine")
+async def list_quarantined_ips(
+    status: Optional[str] = "active",
+    current_user: User = Depends(analyst_or_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all quarantined IP addresses."""
+    try:
+        stmt = select(QuarantinedIP)
+        if status:
+            stmt = stmt.where(QuarantinedIP.status == status)
+        stmt = stmt.order_by(QuarantinedIP.quarantined_at.desc())
+        
+        result = await db.execute(stmt)
+        quarantined = result.scalars().all()
+        
+        return {
+            "quarantined_ips": [q.to_dict() for q in quarantined],
+            "total": len(quarantined),
+            "in_memory_count": len(get_quarantined_ips()),
+        }
+    except Exception as e:
+        logger.exception(f"Error listing quarantined IPs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/security/quarantine")
+async def create_quarantine(
+    request_data: QuarantineRequest,
+    current_user: User = Depends(analyst_or_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Quarantine an IP address manually."""
+    import uuid
+    from datetime import timedelta
+    
+    try:
+        ip = request_data.ip_address
+        
+        # Map threat level string to enum
+        threat_level_map = {
+            "critical": ThreatLevel.CRITICAL,
+            "high": ThreatLevel.HIGH,
+            "medium": ThreatLevel.MEDIUM,
+            "low": ThreatLevel.LOW,
+        }
+        threat_level = threat_level_map.get(
+            request_data.threat_level.lower(), 
+            ThreatLevel.HIGH
+        )
+        
+        # Calculate duration
+        if request_data.duration_hours is not None:
+            duration_seconds = request_data.duration_hours * 3600
+            expires_at = datetime.utcnow() + timedelta(hours=request_data.duration_hours)
+        else:
+            duration_seconds = get_quarantine_duration(threat_level)
+            if duration_seconds == 0:
+                expires_at = None  # Permanent
+            else:
+                expires_at = datetime.utcnow() + timedelta(seconds=duration_seconds)
+        
+        # Add to in-memory quarantine
+        quarantine_ip(ip, request_data.reason)
+        
+        # Create database record
+        quarantine_record = QuarantinedIP(
+            id=uuid.uuid4(),
+            ip_address=ip,
+            reason=request_data.reason,
+            attack_type=request_data.attack_type,
+            quarantined_at=datetime.utcnow(),
+            quarantined_by=current_user.username,
+            expires_at=expires_at,
+            status="active",
+        )
+        
+        db.add(quarantine_record)
+        
+        try:
+            await db.commit()
+            await db.refresh(quarantine_record)
+        except IntegrityError:
+            await db.rollback()
+            # Update existing record
+            stmt = select(QuarantinedIP).where(QuarantinedIP.ip_address == ip)
+            result = await db.execute(stmt)
+            existing = result.scalar_one_or_none()
+            if existing:
+                existing.status = "active"
+                existing.quarantined_at = datetime.utcnow()
+                existing.quarantined_by = current_user.username
+                existing.reason = request_data.reason
+                existing.expires_at = expires_at
+                await db.commit()
+                quarantine_record = existing
+        
+        # Try to block in pfSense
+        try:
+            from shared_lib.integrations.pfsense_client import pfsense_client
+            if pfsense_client and pfsense_client.is_configured():
+                await pfsense_client.block_ip(ip, reason=request_data.reason)
+                logger.info(f"[gateway] Blocked IP {ip} in pfSense")
+        except Exception as e:
+            logger.warning(f"[gateway] pfSense block failed: {e}")
+        
+        # Record audit log
+        try:
+            from audit_service.local_ai.audit_agent import audit_agent
+            await audit_agent.record_action(
+                action="ip_quarantined",
+                target=ip,
+                status="success",
+                actor=current_user.username,
+                resource_type="security",
+                details={
+                    "reason": request_data.reason,
+                    "attack_type": request_data.attack_type,
+                    "threat_level": request_data.threat_level,
+                    "duration_seconds": duration_seconds,
+                    "is_permanent": expires_at is None,
+                }
+            )
+        except Exception:
+            logger.warning("[gateway] Failed to record quarantine audit")
+        
+        # Emit WebSocket event
+        await sio.emit("security.ip_quarantined", {
+            "ip": ip,
+            "reason": request_data.reason,
+            "attack_type": request_data.attack_type,
+            "threat_level": request_data.threat_level,
+            "quarantined_by": current_user.username,
+            "timestamp": datetime.utcnow().isoformat(),
+        })
+        
+        return {
+            "status": "success",
+            "message": f"IP {ip} has been quarantined",
+            "quarantine": quarantine_record.to_dict() if hasattr(quarantine_record, 'to_dict') else {"ip": ip},
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error quarantining IP: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/v1/security/quarantine/{ip_address}")
+async def release_quarantine(
+    ip_address: str,
+    current_user: User = Depends(analyst_or_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Release an IP from quarantine."""
+    try:
+        # Remove from in-memory quarantine
+        release_ip(ip_address)
+        
+        # Update database record
+        stmt = select(QuarantinedIP).where(QuarantinedIP.ip_address == ip_address)
+        result = await db.execute(stmt)
+        quarantine_record = result.scalar_one_or_none()
+        
+        if quarantine_record:
+            quarantine_record.status = "released"
+            await db.commit()
+        
+        # Record audit log
+        try:
+            from audit_service.local_ai.audit_agent import audit_agent
+            await audit_agent.record_action(
+                action="ip_released",
+                target=ip_address,
+                status="success",
+                actor=current_user.username,
+                resource_type="security",
+                details={"previous_status": "active"}
+            )
+        except Exception:
+            logger.warning("[gateway] Failed to record release audit")
+        
+        # Emit WebSocket event
+        await sio.emit("security.ip_released", {
+            "ip": ip_address,
+            "released_by": current_user.username,
+            "timestamp": datetime.utcnow().isoformat(),
+        })
+        
+        return {
+            "status": "success",
+            "message": f"IP {ip_address} has been released from quarantine",
+        }
+        
+    except Exception as e:
+        logger.exception(f"Error releasing IP: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/security/attacks/recent")
+async def get_recent_attacks(
+    limit: int = 50,
+    current_user: User = Depends(analyst_or_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get recent security incidents/attacks."""
+    try:
+        # Query incidents that originated from security middleware
+        stmt = select(Incident).where(
+            Incident.raw_data["source"].astext == "security_middleware"
+        ).order_by(Incident.timestamp.desc()).limit(limit)
+        
+        result = await db.execute(stmt)
+        incidents = result.scalars().all()
+        
+        return {
+            "attacks": [
+                {
+                    "incident_id": str(i.incident_id),
+                    "attack_type": i.raw_data.get("attack_type", "unknown"),
+                    "threat_level": i.raw_data.get("threat_level", "medium"),
+                    "source_ip": i.source_ip,
+                    "severity": i.severity,
+                    "status": i.status,
+                    "description": i.description,
+                    "timestamp": i.timestamp.isoformat() if i.timestamp else None,
+                    "auto_quarantined": i.raw_data.get("auto_quarantined", False),
+                }
+                for i in incidents
+            ],
+            "total": len(incidents),
+        }
+    except Exception as e:
+        logger.exception(f"Error fetching recent attacks: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # -------------------------------------------------
