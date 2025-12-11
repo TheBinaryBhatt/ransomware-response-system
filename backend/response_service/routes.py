@@ -27,6 +27,9 @@ import asyncio
 import uuid
 import os
 
+# Import publish_event for real-time WebSocket notifications
+from core.rabbitmq_utils import publish_event
+
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
@@ -161,13 +164,57 @@ async def respond_to_incident(
     analysis = data.get("analysis", {}) or {}
     agent_id = analysis.get("agent_id") or user.get("username")
 
-    # Fetch incident
+    # Fetch incident from ResponseIncident table
+    from uuid import UUID as UUIDType
+    import logging
+    logger = logging.getLogger(__name__)
+    
     result = await db.execute(
         select(ResponseIncident).where(ResponseIncident.id == incident_id)
     )
     incident = result.scalar_one_or_none()
+    
+    # If not found in ResponseIncident, check the main Incident table and create a ResponseIncident
     if not incident:
-        raise HTTPException(404, "Incident not found")
+        logger.info(f"[Response] Incident {incident_id} not found in ResponseIncident table, checking Incident table...")
+        
+        parent_incident = None
+        # Try to find by UUID
+        try:
+            incident_uuid = UUIDType(incident_id)
+            parent_stmt = select(Incident).where(Incident.incident_id == incident_uuid)
+            parent_result = await db.execute(parent_stmt)
+            parent_incident = parent_result.scalar_one_or_none()
+        except (ValueError, TypeError):
+            pass
+        
+        # If not found by UUID, try by alert_id
+        if not parent_incident:
+            parent_stmt = select(Incident).where(Incident.alert_id == incident_id)
+            parent_result = await db.execute(parent_stmt)
+            parent_incident = parent_result.scalar_one_or_none()
+        
+        if not parent_incident:
+            raise HTTPException(404, "Incident not found")
+        
+        # Create a ResponseIncident record on-the-fly
+        logger.info(f"[Response] Creating ResponseIncident for parent incident {parent_incident.incident_id}")
+        incident = ResponseIncident(
+            id=parent_incident.incident_id,
+            incident_id=parent_incident.incident_id,
+            siem_alert_id=parent_incident.alert_id,
+            source="security_middleware",
+            raw_data=parent_incident.raw_data or {},
+            timestamp=parent_incident.timestamp or datetime.utcnow().replace(tzinfo=timezone.utc),
+            response_status="pending",
+        )
+        db.add(incident)
+        try:
+            await db.commit()
+            await db.refresh(incident)
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(500, f"Failed to create ResponseIncident: {e}")
 
     # If a workflow is already running for this incident, don't start another one.
     if incident.current_task_id:
@@ -268,6 +315,19 @@ async def respond_to_incident(
             parent_incident.status = "RESOLVED"
             await db.commit()
             logger.info(f"[Response] Updated incident {incident_id} status from {old_status} to RESOLVED")
+            
+            # Emit WebSocket event for real-time frontend updates
+            try:
+                publish_event("response.triggered", {
+                    "incident_id": str(incident_id),
+                    "status": "RESOLVED",
+                    "previous_status": old_status,
+                    "severity": parent_incident.severity,
+                    "resolved_by": user.get("username", "unknown"),
+                })
+                logger.info(f"[Response] Published response.triggered event for {incident_id}")
+            except Exception as pub_err:
+                logger.warning(f"[Response] Failed to publish event: {pub_err}")
             
             # Record incident resolution in audit log
             try:

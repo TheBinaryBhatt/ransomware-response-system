@@ -6,6 +6,9 @@ import { useEffect, useCallback, useRef } from 'react';
 import { websocketService } from '../services/websocket';
 import type { WebSocketEventType } from '../types';
 
+// Track if we've already connected at the app level
+let hasConnected = false;
+
 interface UseWebSocketOptions {
     onConnect?: () => void;
     onDisconnect?: () => void;
@@ -13,32 +16,25 @@ interface UseWebSocketOptions {
 }
 
 export const useWebSocket = (options: UseWebSocketOptions = {}) => {
-    const { onConnect, onDisconnect, autoConnect = true } = options;
-    const isConnectedRef = useRef(false);
+    const { autoConnect = true } = options;
+    const mountedRef = useRef(false);
 
-    // Connect on mount if autoConnect is true
+    // Connect only once across the entire app lifecycle
     useEffect(() => {
-        if (autoConnect && !isConnectedRef.current) {
+        if (autoConnect && !hasConnected) {
+            console.log('[useWebSocket] Establishing persistent connection');
             websocketService.connect();
-            isConnectedRef.current = true;
-
-            if (onConnect) {
-                onConnect();
-            }
+            hasConnected = true;
         }
+        mountedRef.current = true;
 
-        // Cleanup on unmount
+        // Do NOT disconnect on unmount - keep connection persistent
         return () => {
-            if (isConnectedRef.current) {
-                websocketService.disconnect();
-                isConnectedRef.current = false;
-
-                if (onDisconnect) {
-                    onDisconnect();
-                }
-            }
+            mountedRef.current = false;
+            // Intentionally NOT calling websocketService.disconnect()
+            // The connection should persist across component lifecycles
         };
-    }, [autoConnect, onConnect, onDisconnect]);
+    }, [autoConnect]);
 
     // Subscribe to an event
     const on = useCallback((event: WebSocketEventType | string, handler: (data: any) => void) => {
@@ -70,6 +66,16 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
         return websocketService.isConnected();
     }, []);
 
+    // Force reconnect (useful for auth changes)
+    const reconnect = useCallback(() => {
+        websocketService.disconnect();
+        hasConnected = false;
+        setTimeout(() => {
+            websocketService.connect();
+            hasConnected = true;
+        }, 100);
+    }, []);
+
     return {
         on,
         off,
@@ -77,6 +83,7 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
         joinRoom,
         leaveRoom,
         isConnected,
+        reconnect,
     };
 };
 
@@ -97,3 +104,4 @@ export const useWebSocketEvent = (
 };
 
 export default useWebSocket;
+

@@ -102,6 +102,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         start_time = time.time()
         client_ip = self._get_client_ip(request)
         
+        
         # Check if IP is quarantined
         if self._is_quarantined(client_ip):
             logger.warning(f"[Security] Blocked request from quarantined IP: {client_ip}")
@@ -131,15 +132,18 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             # 1. Check URL path for attacks
             path_alerts = await self._check_path(request, client_ip)
             security_alerts.extend(path_alerts)
+
             
             # 2. Check User-Agent
             ua_alerts = await self._check_user_agent(request, client_ip)
             security_alerts.extend(ua_alerts)
             
-            # 3. Check request body (for POST/PUT/PATCH)
+            # 3. Check request body (for POST/PUT/PATCH) - but exclude login endpoints
             if request.method in ("POST", "PUT", "PATCH"):
-                body_alerts = await self._check_body(request, client_ip)
-                security_alerts.extend(body_alerts)
+                # Skip body check for auth endpoints to prevent consuming the request body
+                if request.url.path not in self.login_endpoints:
+                    body_alerts = await self._check_body(request, client_ip)
+                    security_alerts.extend(body_alerts)
             
             # 4. Check for broken access control
             access_alerts = await self._check_access_control(request, client_ip)
@@ -228,7 +232,10 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         
         # Check query string for SQL injection
         if query:
-            is_attack, desc = detect_attack(query, AttackType.SQL_INJECTION)
+            # URL decode the query for better pattern matching
+            from urllib.parse import unquote
+            decoded_query = unquote(query)
+            is_attack, desc = detect_attack(decoded_query, AttackType.SQL_INJECTION)
             if is_attack:
                 alerts.append({
                     "attack_type": AttackType.SQL_INJECTION,
@@ -482,20 +489,27 @@ class SecurityMiddleware(BaseHTTPMiddleware):
                 }
                 asyncio.create_task(self._emit_security_event(ws_event))
             
-            # 4. Check for auto-quarantine (>90% confidence + CRITICAL threat)
-            if alert.get("auto_quarantine") or (
-                threat_level == ThreatLevel.CRITICAL and 
-                alert.get("confidence", 1.0) >= 0.9
-            ):
-                await self._auto_quarantine(
-                    client_ip, 
-                    attack_type_str, 
-                    threat_level,
-                    incident_id
-                )
+            # 4. Auto-quarantine DISABLED - quarantine should only happen after
+            # the full pipeline: Detect → Triage (analyze) → Response → Quarantine
+            # The response service will call quarantine_ip() when appropriate
+            # if alert.get("auto_quarantine") or (
+            #     threat_level == ThreatLevel.CRITICAL and 
+            #     alert.get("confidence", 1.0) >= 0.9
+            # ):
+            #     await self._auto_quarantine(
+            #         client_ip, 
+            #         attack_type_str, 
+            #         threat_level,
+            #         incident_id
+            #     )
             
             # 5. Create incident in database
             asyncio.create_task(self._create_incident(alert, request, client_ip, incident_id))
+            
+            # 6. Publish to RabbitMQ to trigger the Triage → Response → Audit pipeline
+            # This follows the proper microservices flow:
+            # Detect → Triage (analyze) → Response (action) → Audit (record)
+            asyncio.create_task(self._publish_to_pipeline(alert, request, client_ip, incident_id))
 
     async def _record_audit(self, audit_data: Dict[str, Any]):
         """Record security event to audit service."""
@@ -521,6 +535,59 @@ class SecurityMiddleware(BaseHTTPMiddleware):
                 logger.info(f"[Security] Emitted security alert: {event_data['attack_type']}")
         except Exception as e:
             logger.debug(f"[Security] Failed to emit WebSocket event: {e}")
+
+    async def _publish_to_pipeline(
+        self, 
+        alert: Dict[str, Any], 
+        request: Request, 
+        client_ip: str,
+        incident_id: str
+    ):
+        """
+        Publish incident to RabbitMQ to trigger the full microservices pipeline:
+        Detect → Triage (analyze) → Response (action) → Audit (record)
+        """
+        try:
+            from shared_lib.events.rabbitmq import publish_event
+            from datetime import datetime
+            
+            attack_type = alert.get("attack_type")
+            if isinstance(attack_type, AttackType):
+                attack_type_str = attack_type.value
+            else:
+                attack_type_str = str(attack_type)
+            
+            threat_level = alert.get("threat_level", ThreatLevel.MEDIUM)
+            if isinstance(threat_level, ThreatLevel):
+                threat_level_str = threat_level.value
+            else:
+                threat_level_str = str(threat_level)
+            
+            # Build event body matching what the ingestion service sends
+            event_body = {
+                "incident_id": incident_id,
+                "raw_data": {
+                    "attack_type": attack_type_str,
+                    "threat_level": threat_level_str,
+                    "source_ip": client_ip,
+                    "path": str(request.url.path),
+                    "method": request.method,
+                    "query": str(request.url.query) if request.url.query else "",
+                    "description": alert.get("description", ""),
+                    "evidence": alert.get("evidence", "")[:1000],
+                    "user_agent": request.headers.get("User-Agent", "")[:500],
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "source": "security_middleware",
+                    "severity": "CRITICAL" if threat_level == ThreatLevel.CRITICAL else "HIGH" if threat_level == ThreatLevel.HIGH else "MEDIUM",
+                }
+            }
+            
+            # Publish to RabbitMQ - this triggers the Triage service
+            await publish_event("incident.received", event_body)
+            logger.info(f"[Security] Published incident {incident_id} to pipeline for analysis")
+            
+        except Exception as e:
+            logger.debug(f"[Security] Failed to publish to pipeline: {e}")
 
     async def _auto_quarantine(
         self, 

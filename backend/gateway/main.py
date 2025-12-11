@@ -88,8 +88,8 @@ app.add_middleware(
 )
 
 # Security Middleware for attack detection
-# Note: We pass sio reference after initialization
-security_middleware = SecurityMiddleware(app, sio=sio)
+# The middleware is added to intercept all requests before they reach endpoints
+app.add_middleware(SecurityMiddleware, sio=sio)
 
 # -------------------------------------------------
 # Internal service URLs

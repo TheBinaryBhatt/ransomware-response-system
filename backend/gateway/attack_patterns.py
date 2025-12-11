@@ -66,42 +66,75 @@ QUARANTINE_DURATION: Dict[ThreatLevel, int] = {
 
 
 # ============================================================
-# SQL Injection Patterns (OWASP A03)
+# SQL Injection Patterns (OWASP A03) - Comprehensive Detection
 # ============================================================
 SQL_INJECTION_PATTERNS: List[Tuple[str, str]] = [
-    # Basic authentication bypass
-    (r"('|\")\s*(OR|AND)\s*('|\")?\d+\s*=\s*\d+", "SQL auth bypass: OR 1=1 pattern"),
-    (r"('|\")\s*(OR|AND)\s*('|\")?\w+\s*=\s*\1\w+", "SQL auth bypass: OR 'a'='a' pattern"),
-    (r"'\s*OR\s*'1'\s*=\s*'1", "SQL auth bypass: classic pattern"),
+    # Basic authentication bypass - various formats
+    (r"'\s*OR\s*'", "SQL injection: OR bypass"),
+    (r'"\s*OR\s*"', "SQL injection: OR bypass (double quotes)"),
+    (r"'\s*AND\s*'", "SQL injection: AND clause"),
+    (r"1\s*=\s*1", "SQL injection: 1=1 tautology"),
+    (r"1\s*=\s*'1", "SQL injection: 1='1 tautology"),
+    (r"'1'\s*=\s*'1", "SQL injection: '1'='1 tautology"),
+    (r"'\s*=\s*'", "SQL injection: '=' empty comparison"),
+    (r"OR\s+\d+\s*=\s*\d+", "SQL injection: OR numeric comparison"),
+    (r"AND\s+\d+\s*=\s*\d+", "SQL injection: AND numeric comparison"),
+    (r"OR\s+TRUE", "SQL injection: OR TRUE"),
+    (r"OR\s+1", "SQL injection: OR 1"),
+    
+    # Quote-based detection (any single quote in parameter values is suspicious)
+    (r"[=&]\w*'", "SQL injection: single quote in parameter"),
     
     # SQL comment injection
-    (r"--\s*$", "SQL comment termination"),
-    (r"#\s*$", "MySQL comment termination"),
-    (r"/\*.*\*/", "SQL block comment"),
+    (r"--", "SQL injection: comment"),
+    (r"#", "SQL injection: MySQL comment"),
+    (r"/\*", "SQL injection: block comment start"),
+    (r"\*/", "SQL injection: block comment end"),
     
     # Union-based injection
-    (r"UNION\s+(ALL\s+)?SELECT", "UNION-based SQL injection"),
-    (r"UNION\s+SELECT\s+NULL", "UNION NULL injection"),
+    (r"UNION\s+(ALL\s+)?SELECT", "SQL injection: UNION SELECT"),
+    (r"UNION\s+SELECT\s+NULL", "SQL injection: UNION NULL"),
+    (r"ORDER\s+BY\s+\d+", "SQL injection: ORDER BY column enumeration"),
     
     # Stacked queries
-    (r";\s*(DROP|DELETE|UPDATE|INSERT|ALTER|CREATE|TRUNCATE)\s+", "Stacked SQL command"),
-    (r";\s*EXEC\s+", "SQL Server EXEC injection"),
-    (r";\s*xp_", "SQL Server extended procedure"),
-    
-    # Boolean-based blind injection
-    (r"AND\s+\d+\s*=\s*\d+", "Boolean-based SQL injection"),
-    (r"OR\s+\d+\s*=\s*\d+", "Boolean-based SQL injection"),
+    (r";\s*(DROP|DELETE|UPDATE|INSERT|ALTER|CREATE|TRUNCATE)", "SQL injection: stacked command"),
+    (r";\s*SELECT", "SQL injection: stacked SELECT"),
+    (r";\s*EXEC", "SQL injection: EXEC injection"),
+    (r"xp_cmdshell", "SQL injection: xp_cmdshell"),
+    (r"xp_", "SQL injection: extended procedure"),
     
     # Time-based blind injection
-    (r"SLEEP\s*\(\s*\d+\s*\)", "Time-based SQL injection (SLEEP)"),
-    (r"BENCHMARK\s*\(", "Time-based SQL injection (BENCHMARK)"),
-    (r"WAITFOR\s+DELAY", "Time-based SQL injection (WAITFOR)"),
-    (r"pg_sleep\s*\(", "PostgreSQL time-based injection"),
+    (r"SLEEP\s*\(", "SQL injection: SLEEP time-based"),
+    (r"BENCHMARK\s*\(", "SQL injection: BENCHMARK time-based"),
+    (r"WAITFOR\s+DELAY", "SQL injection: WAITFOR time-based"),
+    (r"pg_sleep\s*\(", "SQL injection: PostgreSQL time-based"),
+    (r"DBMS_LOCK\.SLEEP", "SQL injection: Oracle time-based"),
+    
+    # Boolean-based blind injection
+    (r"AND\s+SUBSTRING\s*\(", "SQL injection: boolean-based SUBSTRING"),
+    (r"AND\s+ASCII\s*\(", "SQL injection: boolean-based ASCII"),
+    (r"AND\s+CHAR\s*\(", "SQL injection: boolean-based CHAR"),
     
     # Information gathering
-    (r"SELECT\s+.*\s+FROM\s+(information_schema|pg_catalog|sys\.)", "Schema enumeration"),
-    (r"@@version", "SQL Server version probe"),
-    (r"version\(\)", "MySQL/PostgreSQL version probe"),
+    (r"information_schema", "SQL injection: schema enumeration"),
+    (r"pg_catalog", "SQL injection: PostgreSQL catalog"),
+    (r"@@version", "SQL injection: version probe"),
+    (r"version\s*\(\s*\)", "SQL injection: version function"),
+    (r"database\s*\(\s*\)", "SQL injection: database function"),
+    (r"user\s*\(\s*\)", "SQL injection: user function"),
+    (r"current_user", "SQL injection: current user probe"),
+    
+    # Error-based injection
+    (r"EXTRACTVALUE\s*\(", "SQL injection: EXTRACTVALUE error-based"),
+    (r"UPDATEXML\s*\(", "SQL injection: UPDATEXML error-based"),
+    (r"CONVERT\s*\(", "SQL injection: CONVERT"),
+    (r"CAST\s*\(", "SQL injection: CAST"),
+    
+    # Encoding evasion
+    (r"CHAR\s*\(\s*\d+", "SQL injection: CHAR encoding"),
+    (r"0x[0-9a-fA-F]+", "SQL injection: hex encoding"),
+    (r"%27", "SQL injection: URL-encoded quote"),
+    (r"%22", "SQL injection: URL-encoded double quote"),
 ]
 
 # ============================================================

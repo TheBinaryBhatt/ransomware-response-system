@@ -18,6 +18,7 @@ import {
     AreaChart, Area
 } from 'recharts';
 import type { SystemHealth, Incident } from '../types';
+import { SECURITY_WS_EVENTS } from '../utils/constants';
 
 const Dashboard: React.FC = () => {
     const navigate = useNavigate();
@@ -48,6 +49,24 @@ const Dashboard: React.FC = () => {
     });
 
     useWebSocketEvent('response.task.completed', () => {
+        refetchIncidents();
+        refetchHealth();
+    });
+
+    // Listen for security events - update dashboard when attacks are detected
+    useWebSocketEvent(SECURITY_WS_EVENTS.ATTACK_DETECTED, () => {
+        console.log('[Dashboard] Security attack detected - refreshing data');
+        refetchIncidents();
+    });
+
+    useWebSocketEvent(SECURITY_WS_EVENTS.IP_QUARANTINED, () => {
+        console.log('[Dashboard] IP quarantined - refreshing data');
+        refetchIncidents();
+    });
+
+    // Listen for response triggered - update when incidents are resolved
+    useWebSocketEvent('response.triggered', () => {
+        console.log('[Dashboard] Response triggered - refreshing data');
         refetchIncidents();
         refetchHealth();
     });

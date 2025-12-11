@@ -73,10 +73,26 @@ const IncidentsPage: React.FC = () => {
         const unsubTriaged = on('incident.triaged', () => refetch());
         const unsubResponse = on('response.task.completed', () => refetch());
 
+        // Response triggered - update when any incident is resolved via trigger
+        const unsubTriggered = on('response.triggered', (data) => {
+            console.log('[IncidentsPage] Response triggered - refreshing incidents', data);
+            refetch();
+        });
+
+        // Security events - update when attacks are detected
+        const unsubAttack = on('security.attack_detected', () => {
+            console.log('[IncidentsPage] Security attack detected - refreshing incidents');
+            refetch();
+        });
+        const unsubQuarantine = on('security.ip_quarantined', () => refetch());
+
         return () => {
             unsubIncident?.();
             unsubTriaged?.();
             unsubResponse?.();
+            unsubTriggered?.();
+            unsubAttack?.();
+            unsubQuarantine?.();
         };
     }, [on, refetch]);
 
@@ -109,15 +125,27 @@ const IncidentsPage: React.FC = () => {
 
     const handleTriggerResponse = useCallback(async (incidentId: string) => {
         try {
+            // Optimistic update - update UI immediately
+            if (selectedIncident && selectedIncident.incident_id === incidentId) {
+                setSelectedIncident({
+                    ...selectedIncident,
+                    status: 'RESOLVED'
+                });
+            }
+
             await incidentsApi.triggerResponse(incidentId);
-            addNotification('Response triggered successfully! Incident marked as resolved or in progress.', 'success');
-            refetch();
+            addNotification('Response triggered successfully! Incident marked as resolved.', 'success');
+
+            // Close detail drawer and refetch to get fresh data
             handleCloseDetail();
+            await refetch();
         } catch (err) {
             console.error('Failed to trigger response:', err);
             addNotification('Failed to trigger response. Please try again.', 'error');
+            // Revert optimistic update on error
+            refetch();
         }
-    }, [refetch, addNotification, handleCloseDetail]);
+    }, [selectedIncident, refetch, addNotification, handleCloseDetail]);
 
     const handleMarkFalsePositive = useCallback(async (incidentId: string) => {
         try {
