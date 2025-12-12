@@ -2,12 +2,113 @@
 // QUARANTINE PAGE - IP Quarantine Management
 // ============================================
 
-import React from 'react';
-import { Shield, ShieldAlert, Activity, Clock } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Shield, ShieldAlert, Activity, Clock, Zap } from 'lucide-react';
 import QuarantinePanel from '../components/Security/QuarantinePanel';
 import AnimatedBackground from '../components/Common/AnimatedBackground';
+import { securityApi } from '../services/api';
+import { useWebSocket } from '../hooks/useWebSocket';
+import { SECURITY_WS_EVENTS } from '../utils/constants';
+
+interface QuarantineStats {
+    activeQuarantines: number;
+    attacksBlocked24h: number;
+    autoQuarantined: number;
+    avgBlockDuration: string;
+}
 
 const QuarantinePage: React.FC = () => {
+    const [stats, setStats] = useState<QuarantineStats>({
+        activeQuarantines: 0,
+        attacksBlocked24h: 0,
+        autoQuarantined: 0,
+        avgBlockDuration: '—',
+    });
+    const { on } = useWebSocket();
+
+    // Fetch quarantine stats
+    const fetchStats = async () => {
+        try {
+            const [quarantineResponse, attacksResponse] = await Promise.all([
+                securityApi.listQuarantinedIPs('active'),
+                securityApi.getRecentAttacks(100),
+            ]);
+
+            const quarantined = quarantineResponse.quarantined_ips || [];
+            const attacks = attacksResponse.attacks || [];
+
+            // Calculate stats
+            const now = Date.now();
+            const last24h = attacks.filter((a: any) => {
+                const attackTime = new Date(a.timestamp).getTime();
+                return now - attackTime < 24 * 60 * 60 * 1000;
+            });
+
+            const autoQuarantinedCount = quarantined.filter(
+                (q: any) => q.quarantined_by?.includes('auto') || q.quarantined_by?.includes('response_service')
+            ).length;
+
+            // Calculate average duration (simplified)
+            let avgDuration = '—';
+            const durations = quarantined
+                .filter((q: any) => q.expires_at)
+                .map((q: any) => {
+                    const start = new Date(q.quarantined_at).getTime();
+                    const end = new Date(q.expires_at).getTime();
+                    return (end - start) / (1000 * 60 * 60); // hours
+                });
+
+            if (durations.length > 0) {
+                const avgHours = durations.reduce((a: number, b: number) => a + b, 0) / durations.length;
+                avgDuration = avgHours >= 24
+                    ? `${Math.round(avgHours / 24)}d`
+                    : `${Math.round(avgHours)}h`;
+            }
+
+            setStats({
+                activeQuarantines: quarantined.length,
+                attacksBlocked24h: last24h.length,
+                autoQuarantined: autoQuarantinedCount,
+                avgBlockDuration: avgDuration,
+            });
+        } catch (error) {
+            console.error('Failed to fetch quarantine stats:', error);
+        }
+    };
+
+    useEffect(() => {
+        fetchStats();
+
+        // Refresh on quarantine events
+        const unsubQuarantined = on(SECURITY_WS_EVENTS.IP_QUARANTINED, () => {
+            console.log('[QuarantinePage] IP quarantined - refreshing stats');
+            fetchStats();
+        });
+
+        const unsubReleased = on(SECURITY_WS_EVENTS.IP_RELEASED, () => {
+            console.log('[QuarantinePage] IP released - refreshing stats');
+            fetchStats();
+        });
+
+        // Listen for auto-quarantine events
+        const unsubAutoQuarantine = on('security.auto_quarantine', (data: any) => {
+            console.log('[QuarantinePage] Auto-quarantine triggered:', data);
+            fetchStats();
+        });
+
+        // Listen for attack detection
+        const unsubAttack = on(SECURITY_WS_EVENTS.ATTACK_DETECTED, () => {
+            fetchStats();
+        });
+
+        return () => {
+            unsubQuarantined?.();
+            unsubReleased?.();
+            unsubAutoQuarantine?.();
+            unsubAttack?.();
+        };
+    }, [on]);
+
     return (
         <div className="min-h-screen bg-dark-bg relative">
             <AnimatedBackground />
@@ -34,25 +135,25 @@ const QuarantinePage: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                     <StatCard
                         title="Active Quarantines"
-                        value="—"
+                        value={stats.activeQuarantines.toString()}
                         icon={<Shield size={20} />}
                         color="red"
                     />
                     <StatCard
                         title="Attacks Blocked (24h)"
-                        value="—"
+                        value={stats.attacksBlocked24h.toString()}
                         icon={<ShieldAlert size={20} />}
                         color="orange"
                     />
                     <StatCard
                         title="Auto-Quarantined"
-                        value="—"
-                        icon={<Activity size={20} />}
+                        value={stats.autoQuarantined.toString()}
+                        icon={<Zap size={20} />}
                         color="purple"
                     />
                     <StatCard
                         title="Avg Block Duration"
-                        value="—"
+                        value={stats.avgBlockDuration}
                         icon={<Clock size={20} />}
                         color="blue"
                     />
@@ -94,3 +195,4 @@ const StatCard: React.FC<StatCardProps> = ({ title, value, icon, color }) => {
 };
 
 export default QuarantinePage;
+

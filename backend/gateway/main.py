@@ -13,7 +13,7 @@ from typing import Optional, Literal, Any
 
 import httpx
 import socketio
-from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi import FastAPI, HTTPException, Depends, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy import select
@@ -753,6 +753,109 @@ async def list_quarantined_ips(
         }
     except Exception as e:
         logger.exception(f"Error listing quarantined IPs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Internal endpoint for service-to-service quarantine (used by Response Service auto-quarantine)
+SERVICE_AUTH_TOKEN = os.getenv("SERVICE_AUTH_TOKEN", "response_service")
+
+@app.post("/api/internal/security/quarantine")
+async def internal_create_quarantine(
+    request_data: QuarantineRequest,
+    db: AsyncSession = Depends(get_db),
+    x_service_auth: str = Header(None)
+):
+    """Internal quarantine endpoint for service-to-service calls (auto-quarantine)."""
+    import uuid
+    from datetime import timedelta
+    
+    # Validate service authentication
+    if x_service_auth != SERVICE_AUTH_TOKEN:
+        raise HTTPException(status_code=401, detail="Invalid service authentication")
+    
+    try:
+        ip = request_data.ip_address
+        
+        # Map threat level string to enum
+        threat_level_map = {
+            "critical": ThreatLevel.CRITICAL,
+            "high": ThreatLevel.HIGH,
+            "medium": ThreatLevel.MEDIUM,
+            "low": ThreatLevel.LOW,
+        }
+        threat_level = threat_level_map.get(
+            request_data.threat_level.lower(), 
+            ThreatLevel.HIGH
+        )
+        
+        # Calculate duration
+        if request_data.duration_hours is not None:
+            duration_seconds = request_data.duration_hours * 3600
+            expires_at = datetime.utcnow() + timedelta(hours=request_data.duration_hours)
+        else:
+            duration_seconds = get_quarantine_duration(threat_level)
+            if duration_seconds == 0:
+                expires_at = None  # Permanent
+            else:
+                expires_at = datetime.utcnow() + timedelta(seconds=duration_seconds)
+        
+        # Add to in-memory quarantine
+        quarantine_ip(ip, request_data.reason)
+        
+        # Create database record
+        quarantine_record = QuarantinedIP(
+            id=uuid.uuid4(),
+            ip_address=ip,
+            reason=request_data.reason,
+            attack_type=request_data.attack_type,
+            quarantined_at=datetime.utcnow(),
+            quarantined_by="response_service_auto",
+            expires_at=expires_at,
+            is_active=True,
+        )
+        
+        db.add(quarantine_record)
+        try:
+            await db.commit()
+            await db.refresh(quarantine_record)
+        except Exception:
+            await db.rollback()
+            # Already exists, update
+            stmt = select(QuarantinedIP).where(QuarantinedIP.ip_address == ip)
+            result = await db.execute(stmt)
+            existing = result.scalar_one_or_none()
+            if existing:
+                existing.is_active = True
+                existing.reason = request_data.reason
+                existing.quarantined_at = datetime.utcnow()
+                existing.quarantined_by = "response_service_auto"
+                existing.expires_at = expires_at
+                await db.commit()
+                quarantine_record = existing
+        
+        logger.info(f"[Internal] Auto-quarantined IP {ip} by Response Service")
+        
+        # Emit WebSocket event
+        await sio.emit("security.ip_quarantined", {
+            "ip_address": ip,
+            "reason": request_data.reason,
+            "attack_type": request_data.attack_type,
+            "quarantined_by": "response_service_auto",
+            "expires_at": expires_at.isoformat() if expires_at else None,
+            "auto_quarantine": True,
+        })
+        
+        return {
+            "status": "quarantined",
+            "ip_address": ip,
+            "expires_at": expires_at.isoformat() if expires_at else None,
+            "auto_quarantine": True,
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error in internal quarantine: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

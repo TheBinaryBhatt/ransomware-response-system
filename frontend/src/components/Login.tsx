@@ -1,7 +1,7 @@
 import { useState, FormEvent } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
-import { User, Lock, Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 
 const Login: React.FC = () => {
     const [username, setUsername] = useState('');
@@ -181,7 +181,7 @@ const Login: React.FC = () => {
                             fontFamily: 'system-ui, -apple-system, sans-serif',
                             letterSpacing: '0.5px'
                         }}>
-                            RRS | Ransomware Response Platform
+                            RRS | Ransomware Response System
                         </h1>
                         <p className="text-sm text-gray-400" style={{ letterSpacing: '0.3px' }}>
                             Security Operations Center Login
@@ -202,7 +202,7 @@ const Login: React.FC = () => {
                             </label>
                             <div className="relative">
                                 <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
-                                    <User size={18} />
+
                                 </div>
                                 <input
                                     id="username"
@@ -232,7 +232,7 @@ const Login: React.FC = () => {
                             </label>
                             <div className="relative">
                                 <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
-                                    <Lock size={18} />
+
                                 </div>
                                 <input
                                     id="password"

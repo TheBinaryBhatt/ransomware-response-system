@@ -2,6 +2,7 @@
 import os
 import logging
 import asyncio
+import httpx
 from typing import Dict, Optional
 
 from sqlalchemy import select
@@ -28,9 +29,154 @@ except Exception:
 QUEUE_NAME = os.getenv("RESPONSE_QUEUE", "response.incidents")
 BINDING_KEYS = os.getenv("RESPONSE_BINDINGS", "triage.completed,incident.triaged").split(",")
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
+GATEWAY_URL = os.getenv("GATEWAY_URL", "http://gateway:8000")
+
+# Confidence thresholds for auto-quarantine
+AUTO_QUARANTINE_THRESHOLD = 80  # > 80% confidence → auto-quarantine
+ANALYST_REVIEW_THRESHOLD = 60   # 60-80% → recommend but ask analyst
 
 # main_loop will be set by the caller (startup) so we always schedule DB operations on the main uvicorn loop
 MAIN_LOOP: Optional[asyncio.AbstractEventLoop] = None
+
+
+async def _auto_quarantine_if_needed(incident: ResponseIncident, triage_result: Dict, raw_data: Dict) -> bool:
+    """
+    Auto-quarantine the attacker IP based on AI confidence score.
+    
+    - Confidence > 80%: Auto-quarantine immediately
+    - Confidence 60-80%: Notify analyst with recommendation
+    - Confidence < 60%: Leave decision to analyst
+    
+    Returns True if auto-quarantine was triggered.
+    """
+    if not settings.auto_response_enabled:
+        logger.info("[Response] Auto-response disabled, skipping auto-quarantine check")
+        return False
+    
+    # Extract confidence score (0.0 - 1.0 scale in triage)
+    confidence = 0.0
+    threat_score = 0
+    
+    if isinstance(triage_result, dict):
+        # Confidence is 0.0-1.0, convert to percentage
+        confidence = float(triage_result.get("confidence", 0) or 0) * 100
+        threat_score = int(triage_result.get("threat_score", 0) or 0)
+    
+    # Also consider threat_score (0-100 scale)
+    effective_score = max(confidence, threat_score)
+    
+    # Extract source IP from raw_data
+    source_ip = None
+    if isinstance(raw_data, dict):
+        source_ip = raw_data.get("source_ip") or raw_data.get("client_ip") or raw_data.get("ip")
+    
+    if not source_ip:
+        logger.info("[Response] No source IP found for quarantine decision")
+        return False
+    
+    decision = triage_result.get("decision", "") if isinstance(triage_result, dict) else ""
+    incident_id = str(incident.id)
+    
+    # Determine quarantine action based on confidence
+    if effective_score > AUTO_QUARANTINE_THRESHOLD:
+        # HIGH CONFIDENCE: Auto-quarantine immediately
+        logger.info(f"[Response] HIGH CONFIDENCE ({effective_score:.0f}%) - Auto-quarantining IP {source_ip}")
+        
+        try:
+            # Call the gateway internal quarantine API
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{GATEWAY_URL}/api/internal/security/quarantine",
+                    json={
+                        "ip_address": source_ip,
+                        "reason": f"Auto-quarantined: AI confidence {effective_score:.0f}% (threshold: {AUTO_QUARANTINE_THRESHOLD}%)",
+                        "attack_type": raw_data.get("attack_type", "unknown") if isinstance(raw_data, dict) else "unknown",
+                        "threat_level": "critical" if effective_score >= 90 else "high",
+                    },
+                    headers={"X-Service-Auth": "response_service"},
+                    timeout=10.0
+                )
+                
+                if resp.status_code in (200, 201):
+                    logger.info(f"[Response] Successfully auto-quarantined IP {source_ip}")
+                    
+                    # Mark incident as auto-quarantined
+                    incident.response_status = "auto_quarantined"
+                    
+                    # Emit WebSocket event
+                    await publish_event(
+                        "security.auto_quarantine",
+                        {
+                            "incident_id": incident_id,
+                            "ip_address": source_ip,
+                            "confidence": effective_score,
+                            "decision": decision,
+                            "action": "auto_quarantined",
+                            "reason": f"AI confidence {effective_score:.0f}% exceeds threshold",
+                        },
+                        rabbitmq_host=RABBITMQ_HOST,
+                    )
+                    
+                    # Record audit log
+                    await audit_agent.record_action(
+                        action="auto_quarantine_triggered",
+                        target=source_ip,
+                        status="success",
+                        actor="response_service",
+                        resource_type="ip_address",
+                        details={
+                            "incident_id": incident_id,
+                            "confidence": effective_score,
+                            "threshold": AUTO_QUARANTINE_THRESHOLD,
+                            "decision": decision,
+                        },
+                    )
+                    return True
+                else:
+                    logger.warning(f"[Response] Failed to quarantine IP {source_ip}: {resp.status_code}")
+                    
+        except Exception as e:
+            logger.exception(f"[Response] Error during auto-quarantine for {source_ip}: {e}")
+    
+    elif effective_score >= ANALYST_REVIEW_THRESHOLD:
+        # MEDIUM CONFIDENCE: Recommend quarantine but notify analyst
+        logger.info(f"[Response] MEDIUM CONFIDENCE ({effective_score:.0f}%) - Recommending quarantine for IP {source_ip}")
+        
+        await publish_event(
+            "security.quarantine_recommended",
+            {
+                "incident_id": incident_id,
+                "ip_address": source_ip,
+                "confidence": effective_score,
+                "decision": decision,
+                "action": "analyst_review_required",
+                "reason": f"AI confidence {effective_score:.0f}% - analyst confirmation recommended",
+            },
+            rabbitmq_host=RABBITMQ_HOST,
+        )
+        
+        incident.response_status = "pending_analyst_review"
+        
+    else:
+        # LOW CONFIDENCE: Leave to analyst
+        logger.info(f"[Response] LOW CONFIDENCE ({effective_score:.0f}%) - Leaving quarantine decision to analyst for IP {source_ip}")
+        
+        await publish_event(
+            "security.analyst_decision_required",
+            {
+                "incident_id": incident_id,
+                "ip_address": source_ip,
+                "confidence": effective_score,
+                "decision": decision,
+                "action": "analyst_decision_required",
+                "reason": f"AI confidence {effective_score:.0f}% - analyst decision required",
+            },
+            rabbitmq_host=RABBITMQ_HOST,
+        )
+        
+        incident.response_status = "pending_analyst_decision"
+    
+    return False
 
 
 async def _auto_trigger_if_needed(incident: ResponseIncident, triage_result: Dict, decision: Dict | str) -> None:
@@ -132,6 +278,9 @@ async def _process(payload: Dict):
                 # Reset to pending if new triage result arrives and nothing has started yet
                 if not incident.current_task_id:
                     incident.response_status = "pending"
+
+            # Check confidence-based auto-quarantine (>80% → auto-block)
+            await _auto_quarantine_if_needed(incident, triage_result, raw_data)
 
             # Optionally auto-start workflow based on triage+config
             await _auto_trigger_if_needed(incident, triage_result, decision)

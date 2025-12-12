@@ -102,7 +102,12 @@ const IncidentsPage: React.FC = () => {
 
     const stats = {
         total,
-        critical: incidentsList.filter((i) => i.severity === 'CRITICAL').length,
+        // 'Require Immediate Action' - only count CRITICAL/HIGH incidents that are NOT resolved
+        critical: incidentsList.filter((i) =>
+            (i.severity === 'CRITICAL' || i.severity === 'HIGH') &&
+            i.status !== 'RESOLVED' &&
+            i.status !== 'FALSE_POSITIVE'
+        ).length,
         pending: incidentsList.filter((i) => i.status === 'PENDING' || i.status === 'NEW').length,
         resolved: incidentsList.filter((i) => i.status === 'RESOLVED').length,
     };
