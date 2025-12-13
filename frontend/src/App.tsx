@@ -2,27 +2,31 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { IncidentProvider } from './contexts/IncidentContext';
 import { NotificationProvider } from './contexts/NotificationContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import AppLayout from './components/Layout/AppLayout';
 import Dashboard from './components/Dashboard';
 import Login from './components/Login';
 import NotificationCenter from './components/Common/NotificationCenter';
-import { IncidentsPage, ThreatIntelPage, WorkflowsPage, AuditLogsPage, SettingsPage } from './pages';
+import { IncidentsPage, WorkflowsPage, AuditLogsPage, SettingsPage } from './pages';
 import QuarantinePage from './pages/QuarantinePage';
 
 function App() {
     return (
         <BrowserRouter>
-            <AuthProvider>
-                <IncidentProvider>
-                    <NotificationProvider>
-                        <NotificationCenter />
-                        <AppContent />
-                    </NotificationProvider>
-                </IncidentProvider>
-            </AuthProvider>
+            <ThemeProvider>
+                <AuthProvider>
+                    <IncidentProvider>
+                        <NotificationProvider>
+                            <NotificationCenter />
+                            <AppContent />
+                        </NotificationProvider>
+                    </IncidentProvider>
+                </AuthProvider>
+            </ThemeProvider>
         </BrowserRouter>
     );
 }
+
 
 // Main app content (needs to be inside AuthProvider to use useAuth)
 function AppContent() {
@@ -51,8 +55,6 @@ function AppContent() {
                             <Routes>
                                 <Route path="/dashboard" element={<Dashboard />} />
                                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                                {/* Placeholder routes */}
-                                <Route path="/threat-intel" element={<ThreatIntelPage />} />
                                 <Route path="/incidents" element={<IncidentsPage />} />
                                 <Route path="/workflows" element={<WorkflowsPage />} />
                                 <Route path="/audit-logs" element={<AuditLogsPage />} />

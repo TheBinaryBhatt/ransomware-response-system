@@ -55,7 +55,7 @@ const IncidentsPage: React.FC = () => {
 
     // Fetch incidents with polling
     const {
-        data: incidents,
+        data: fetchedIncidents,
         loading,
         error,
         refetch,
@@ -63,6 +63,16 @@ const IncidentsPage: React.FC = () => {
         () => incidentsApi.getAll(queryParams),
         [page, filters.status, filters.severity, filters.threat_type, filters.search]
     );
+
+    // Local state for incidents to allow optimistic updates
+    const [incidents, setIncidents] = useState<Incident[] | null>(null);
+
+    // Sync fetched incidents to local state
+    React.useEffect(() => {
+        if (fetchedIncidents) {
+            setIncidents(fetchedIncidents);
+        }
+    }, [fetchedIncidents]);
 
     // WebSocket for real-time updates
     const { on } = useWebSocket();
@@ -129,26 +139,43 @@ const IncidentsPage: React.FC = () => {
     }, []);
 
     const handleTriggerResponse = useCallback(async (incidentId: string) => {
-        try {
-            // Optimistic update - update UI immediately
-            if (selectedIncident && selectedIncident.incident_id === incidentId) {
-                setSelectedIncident({
-                    ...selectedIncident,
-                    status: 'RESOLVED'
-                });
-            }
+        // Optimistic update - update UI immediately
+        // Update selected incident
+        if (selectedIncident && selectedIncident.incident_id === incidentId) {
+            setSelectedIncident({
+                ...selectedIncident,
+                status: 'RESOLVED'
+            });
+        }
 
+        // Update incidents list locally for immediate stats update
+        setIncidents((prevIncidents) => {
+            if (!prevIncidents) return prevIncidents;
+            return prevIncidents.map((incident) =>
+                incident.incident_id === incidentId
+                    ? { ...incident, status: 'RESOLVED' }
+                    : incident
+            );
+        });
+
+        try {
+            // Call the API to trigger the response
             await incidentsApi.triggerResponse(incidentId);
             addNotification('Response triggered successfully! Incident marked as resolved.', 'success');
 
-            // Close detail drawer and refetch to get fresh data
+            // Close detail drawer
             handleCloseDetail();
-            await refetch();
+
+            // Refetch in background - don't await and don't let errors affect the success flow
+            // The optimistic update already shows the correct state
+            refetch().catch((err) => {
+                console.warn('Background refetch failed (trigger succeeded):', err);
+            });
         } catch (err) {
             console.error('Failed to trigger response:', err);
             addNotification('Failed to trigger response. Please try again.', 'error');
-            // Revert optimistic update on error
-            refetch();
+            // Revert optimistic update on error by refetching from server
+            refetch().catch(() => { });
         }
     }, [selectedIncident, refetch, addNotification, handleCloseDetail]);
 
@@ -165,7 +192,7 @@ const IncidentsPage: React.FC = () => {
     }, [refetch, addNotification, handleCloseDetail]);
 
     return (
-        <div className="min-h-screen relative overflow-hidden" style={{
+        <div className="min-h-full relative overflow-hidden" style={{
             background: 'radial-gradient(ellipse at center, #0a1628 0%, #020817 100%)'
         }}>
             {/* Animated Network Background */}

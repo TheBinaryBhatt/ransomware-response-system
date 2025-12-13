@@ -2,6 +2,55 @@
 
 /* RRS Design System - Global Styles */
 
+/* ================================
+   THEME VARIABLES
+   ================================ */
+
+/* Dark Theme (Default) */
+:root,
+.dark-theme {
+  --color-bg: #0a1628;
+  --color-bg-alt: #1F2121;
+  --color-bg-surface: #252727;
+  --color-bg-card: rgba(15, 23, 42, 0.6);
+  --color-text-primary: #FCFCF9;
+  --color-text-secondary: #9CA3AF;
+  --color-border: #3A3C3C;
+  --color-border-light: rgba(59, 130, 246, 0.2);
+  --color-accent: #3b82f6;
+  --color-accent-teal: #32B8C6;
+  --color-accent-hover: #29A0AC;
+  --glass-bg: rgba(10, 22, 40, 0.8);
+  --sidebar-bg: linear-gradient(180deg, rgba(10, 22, 40, 0.95) 0%, rgba(2, 8, 23, 0.98) 100%);
+  --header-bg: rgba(10, 22, 40, 0.8);
+  --scrollbar-track: #1F2121;
+  --scrollbar-thumb: #3A3C3C;
+  --input-bg: rgba(59, 130, 246, 0.1);
+  --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+}
+
+/* Light Theme - Complete Override */
+.light-theme {
+  --color-bg: #f0f4f8;
+  --color-bg-alt: #e2e8f0;
+  --color-bg-surface: #ffffff;
+  --color-bg-card: rgba(255, 255, 255, 0.95);
+  --color-text-primary: #1e293b;
+  --color-text-secondary: #475569;
+  --color-border: #cbd5e1;
+  --color-border-light: rgba(59, 130, 246, 0.3);
+  --color-accent: #0ea5e9;
+  --color-accent-teal: #0891b2;
+  --color-accent-hover: #0284c7;
+  --glass-bg: rgba(255, 255, 255, 0.9);
+  --sidebar-bg: linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%);
+  --header-bg: rgba(255, 255, 255, 0.9);
+  --scrollbar-track: #f1f5f9;
+  --scrollbar-thumb: #94a3b8;
+  --input-bg: rgba(241, 245, 249, 1);
+  --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -10,12 +59,196 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-  background-color: #1F2121;
-  color: #FCFCF9;
+  background-color: var(--color-bg);
+  color: var(--color-text-primary);
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* ================================
+   LIGHT THEME - COMPREHENSIVE OVERRIDES
+   ================================ */
+
+/* Main background & body */
+.light-theme,
+.light-theme body {
+  background-color: var(--color-bg) !important;
+  color: var(--color-text-primary) !important;
+}
+
+/* All dark background classes */
+.light-theme .bg-dark-bg,
+.light-theme [class*="bg-dark-bg"],
+.light-theme .min-h-full.bg-dark-bg {
+  background-color: var(--color-bg) !important;
+}
+
+.light-theme .bg-dark-surface,
+.light-theme [class*="bg-dark-surface"] {
+  background-color: var(--color-bg-surface) !important;
+}
+
+/* Radial gradient backgrounds (like main pages) */
+.light-theme [style*="radial-gradient"],
+.light-theme [style*="background: radial"] {
+  background: linear-gradient(135deg, #f0f4f8 0%, #e2e8f0 50%, #cbd5e1 100%) !important;
+}
+
+/* Sidebar */
+.light-theme aside,
+.light-theme nav[class*="sidebar"],
+.light-theme .sidebar,
+.light-theme [class*="w-64"][class*="border-r"],
+.light-theme div[class*="fixed"][class*="left-0"][class*="h-full"] {
+  background: var(--sidebar-bg) !important;
+  border-color: var(--color-border) !important;
+}
+
+/* Header */
+.light-theme header,
+.light-theme [class*="h-20"][class*="border-b"] {
+  background-color: var(--header-bg) !important;
+  border-color: var(--color-border) !important;
+}
+
+/* Override inline styles on header */
+.light-theme header[style] {
+  background-color: var(--header-bg) !important;
+}
+
+/* All cards and panels */
+.light-theme .rounded-lg,
+.light-theme .rounded-xl,
+.light-theme [class*="rounded-lg"][class*="border"],
+.light-theme [class*="rounded-xl"][class*="border"] {
+  background-color: var(--color-bg-surface) !important;
+  border-color: var(--color-border) !important;
+  box-shadow: var(--card-shadow);
+}
+
+/* Inner card backgrounds */
+.light-theme [class*="bg-dark-bg\\/50"],
+.light-theme .bg-dark-bg\/50 {
+  background-color: var(--color-bg-alt) !important;
+}
+
+/* Text colors */
+.light-theme .text-text-primary,
+.light-theme [class*="text-text-primary"] {
+  color: var(--color-text-primary) !important;
+}
+
+.light-theme .text-text-secondary,
+.light-theme [class*="text-text-secondary"] {
+  color: var(--color-text-secondary) !important;
+}
+
+.light-theme .text-white {
+  color: var(--color-text-primary) !important;
+}
+
+/* Border colors */
+.light-theme [class*="border-accent-teal"],
+.light-theme [class*="border-blue-500"] {
+  border-color: var(--color-border-light) !important;
+}
+
+/* Inputs and selects */
+.light-theme input,
+.light-theme select,
+.light-theme textarea {
+  background-color: var(--input-bg) !important;
+  border-color: var(--color-border) !important;
+  color: var(--color-text-primary) !important;
+}
+
+.light-theme input::placeholder,
+.light-theme textarea::placeholder {
+  color: var(--color-text-secondary) !important;
+}
+
+/* Buttons - keep accent colors but adjust */
+.light-theme button[class*="bg-accent-teal"],
+.light-theme [class*="bg-accent-teal"] {
+  background-color: var(--color-accent-teal) !important;
+}
+
+/* Dropdown - inline styled ones */
+.light-theme [style*="backgroundColor: 'rgba(15, 23, 42"],
+.light-theme [style*="background-color: rgba(15, 23, 42"] {
+  background-color: var(--color-bg-surface) !important;
+}
+
+/* SVG and icons - make them darker in light mode */
+.light-theme svg[class*="text-text-secondary"] {
+  color: var(--color-text-secondary) !important;
+}
+
+/* AnimatedBackground - hide or fade in light mode */
+.light-theme .animated-background,
+.light-theme [class*="AnimatedBackground"],
+.light-theme canvas {
+  opacity: 0.15 !important;
+}
+
+/* Stat cards */
+.light-theme [class*="bg-gradient-to-br"] {
+  background: var(--color-bg-surface) !important;
+  box-shadow: var(--card-shadow);
+}
+
+/* Tables */
+.light-theme table {
+  background-color: var(--color-bg-surface) !important;
+}
+
+.light-theme th,
+.light-theme td {
+  border-color: var(--color-border) !important;
+  color: var(--color-text-primary) !important;
+}
+
+.light-theme tr:hover {
+  background-color: var(--color-bg-alt) !important;
+}
+
+/* Status badges - preserve their colors */
+.light-theme [class*="bg-green-500"],
+.light-theme [class*="bg-red-500"],
+.light-theme [class*="bg-yellow-500"],
+.light-theme [class*="bg-blue-500"],
+.light-theme [class*="bg-purple-500"],
+.light-theme [class*="bg-orange-500"] {
+  /* Intentionally empty - preserve original badge colors */
+  color: inherit;
+}
+
+/* Charts and visualization areas */
+.light-theme .recharts-wrapper {
+  background-color: transparent !important;
+}
+
+/* Glass morphism */
+.light-theme .glass {
+  background: var(--glass-bg) !important;
+  border-color: var(--color-border) !important;
+}
+
+/* Search bar in header */
+.light-theme .header-search-input,
+.light-theme input[class*="rounded-full"] {
+  background-color: var(--input-bg) !important;
+  border-color: var(--color-border) !important;
+  color: var(--color-text-primary) !important;
+}
+
+/* Dropdown menus */
+.light-theme [class*="absolute"][class*="right-0"][class*="mt-2"] {
+  background-color: var(--color-bg-surface) !important;
+  border-color: var(--color-border) !important;
 }
 
 /* Monospace font for technical data */
@@ -26,29 +259,29 @@ body {
 
 /* Glassmorphism utility */
 .glass {
-  background: rgba(37, 39, 39, 0.8);
+  background: var(--glass-bg);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(58, 60, 60, 0.5);
+  border: 1px solid var(--color-border);
 }
 
-/* Scrollbar styling for dark theme */
+/* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #1F2121;
+  background: var(--scrollbar-track);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #3A3C3C;
+  background: var(--scrollbar-thumb);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #32B8C6;
+  background: var(--color-accent);
 }
 
 /* Hide default number spinners */
@@ -60,12 +293,44 @@ input[type="number"]::-webkit-outer-spin-button {
 
 /* Focus visible for accessibility */
 *:focus-visible {
-  outline: 2px solid #32B8C6;
+  outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
 
 /* Selection color */
 ::selection {
   background-color: rgba(50, 184, 198, 0.3);
-  color: #FCFCF9;
+  color: var(--color-text-primary);
+}
+
+.light-theme ::selection {
+  background-color: rgba(14, 165, 233, 0.3);
+  color: var(--color-text-primary);
+}
+
+/* ================================
+   LIGHT THEME - PAGE SPECIFIC
+   ================================ */
+
+/* Dashboard and main content areas with inline background styles */
+.light-theme .min-h-full[style*="background"],
+.light-theme div[style*="radial-gradient"] {
+  background: var(--color-bg) !important;
+}
+
+/* Settings page specific */
+.light-theme [style*="rgba(37, 39, 39"] {
+  background-color: var(--header-bg) !important;
+}
+
+/* Sidebar navigation items on hover */
+.light-theme nav a:hover,
+.light-theme [class*="sidebar"] a:hover {
+  background-color: var(--color-bg-alt) !important;
+}
+
+/* Active sidebar item */
+.light-theme nav a[class*="bg-accent-teal"],
+.light-theme [class*="sidebar"] a[class*="active"] {
+  background-color: rgba(14, 165, 233, 0.15) !important;
 }

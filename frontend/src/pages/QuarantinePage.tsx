@@ -3,7 +3,7 @@
 // ============================================
 
 import React, { useState, useEffect } from 'react';
-import { Shield, ShieldAlert, Activity, Clock, Zap } from 'lucide-react';
+import { Shield, ShieldAlert, Clock, Zap } from 'lucide-react';
 import QuarantinePanel from '../components/Security/QuarantinePanel';
 import AnimatedBackground from '../components/Common/AnimatedBackground';
 import { securityApi } from '../services/api';
@@ -110,7 +110,7 @@ const QuarantinePage: React.FC = () => {
     }, [on]);
 
     return (
-        <div className="min-h-screen bg-dark-bg relative">
+        <div className="min-h-full bg-dark-bg relative">
             <AnimatedBackground />
 
             <div className="relative z-10 p-6">

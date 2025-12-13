@@ -331,7 +331,7 @@ const AuditLogsPage: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen relative overflow-hidden" style={{
+        <div className="min-h-full relative overflow-hidden" style={{
             background: 'radial-gradient(ellipse at center, #0a1628 0%, #020817 100%)'
         }}>
             {/* Animated Network Background */}

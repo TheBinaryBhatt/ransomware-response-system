@@ -118,10 +118,10 @@ export const ROUTES = {
     DASHBOARD: '/dashboard',
     INCIDENTS: '/incidents',
     INCIDENT_DETAIL: '/incidents/:id',
-    THREAT_INTEL: '/threat-intel',
     WORKFLOWS: '/workflows',
     AUDIT_LOGS: '/audit-logs',
     SETTINGS: '/settings',
     QUARANTINE: '/quarantine',
 } as const;
+
 

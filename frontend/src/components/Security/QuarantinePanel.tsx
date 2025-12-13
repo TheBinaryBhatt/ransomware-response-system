@@ -8,7 +8,6 @@ import {
     ShieldOff,
     Clock,
     AlertTriangle,
-    Search,
     RefreshCw,
     CheckCircle,
     Loader2
@@ -208,13 +207,12 @@ const QuarantinePanel: React.FC<QuarantinePanelProps> = ({ className = '', compa
 
                 {/* Search */}
                 <div className="relative mb-4">
-                    <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
                     <input
                         type="text"
                         placeholder="Search IPs, attack types..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 bg-dark-bg border border-accent-teal/20 rounded-lg text-text-primary placeholder-text-secondary focus:border-accent-teal focus:outline-none"
+                        className="w-full px-4 py-2 bg-dark-bg border border-accent-teal/20 rounded-lg text-text-primary placeholder-text-secondary focus:border-accent-teal focus:outline-none"
                     />
                 </div>
 

@@ -5,9 +5,10 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Menu, Settings as SettingsIcon, LogOut, ChevronDown } from 'lucide-react';
+import { Search, Menu, LogOut, ChevronDown } from 'lucide-react';
 import type { User } from '../../types';
 import NotificationBell from '../Common/NotificationBell';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface HeaderProps {
     onToggleSidebar: () => void;
@@ -20,6 +21,21 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, currentUser, onLogout 
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const navigate = useNavigate();
+    const { theme } = useTheme();
+    const isLight = theme === 'light';
+
+    // Theme-aware colors
+    const colors = {
+        headerBg: isLight ? 'rgba(255, 255, 255, 0.95)' : 'rgba(10, 22, 40, 0.8)',
+        borderColor: isLight ? '#e2e8f0' : 'rgba(59, 130, 246, 0.2)',
+        textPrimary: isLight ? '#1e293b' : '#ffffff',
+        textSecondary: isLight ? '#64748b' : '#9ca3af',
+        accent: isLight ? '#0ea5e9' : '#3b82f6',
+        inputBg: isLight ? '#f1f5f9' : 'rgba(59, 130, 246, 0.1)',
+        inputBorder: isLight ? '#cbd5e1' : 'rgba(59, 130, 246, 0.3)',
+        dropdownBg: isLight ? 'rgba(255, 255, 255, 0.98)' : 'rgba(15, 23, 42, 0.95)',
+        hoverBg: isLight ? 'rgba(14, 165, 233, 0.1)' : 'rgba(59, 130, 246, 0.1)',
+    };
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -54,10 +70,10 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, currentUser, onLogout 
     };
 
     return (
-        <header className="fixed top-0 left-0 right-0 h-20 border-b z-50" style={{
-            backgroundColor: 'rgba(10, 22, 40, 0.8)',
+        <header className="relative h-20 border-b z-50" style={{
+            backgroundColor: colors.headerBg,
             backdropFilter: 'blur(12px)',
-            borderColor: 'rgba(59, 130, 246, 0.2)'
+            borderColor: colors.borderColor
         }}>
             <div className="flex items-center justify-between h-full px-6 gap-6">
                 {/* Left Section - Logo + Live Indicator */}
@@ -67,13 +83,13 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, currentUser, onLogout 
                         <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
                             <path
                                 d="M16 2 L26 6 L26 14 Q26 22 16 30 Q6 22 6 14 L6 6 Z"
-                                stroke="#3b82f6"
+                                stroke={colors.accent}
                                 strokeWidth="1.5"
-                                fill="rgba(59, 130, 246, 0.2)"
+                                fill={isLight ? 'rgba(14, 165, 233, 0.2)' : 'rgba(59, 130, 246, 0.2)'}
                             />
-                            <rect x="13" y="14" width="6" height="6" rx="1" fill="#3b82f6" />
+                            <rect x="13" y="14" width="6" height="6" rx="1" fill={colors.accent} />
                         </svg>
-                        <span className="text-base font-bold text-white">RRS</span>
+                        <span className="text-base font-bold" style={{ color: colors.textPrimary }}>RRS</span>
                     </div>
 
                     {/* Live Indicator */}
@@ -95,17 +111,17 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, currentUser, onLogout 
                 {/* Center Section - Search Bar */}
                 <div className="flex-1 max-w-md mx-4 hidden md:block">
                     <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: '#3b82f6' }} size={18} />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: colors.accent }} size={18} />
                         <input
                             type="text"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             placeholder="Search incidents (e.g., INC-2025-11-21)"
-                            className="w-full pl-10 pr-4 py-2 rounded-full text-sm font-mono text-white focus:outline-none focus:ring-2 transition-all"
+                            className="header-search-input w-full pl-10 pr-4 py-2 rounded-full text-sm font-mono focus:outline-none focus:ring-2 transition-all"
                             style={{
-                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                                border: '1px solid rgba(59, 130, 246, 0.3)',
-                                '::placeholder': { color: '#6b7280' }
+                                backgroundColor: colors.inputBg,
+                                border: `1px solid ${colors.inputBorder}`,
+                                color: colors.textPrimary
                             }}
                         />
                     </div>
@@ -122,14 +138,11 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, currentUser, onLogout 
                     <button
                         onClick={onToggleSidebar}
                         className="hidden md:block p-2 rounded-lg transition-colors"
-                        style={{ 
-                            '&:hover': { backgroundColor: 'rgba(59, 130, 246, 0.1)' }
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.hoverBg}
                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                         aria-label="Toggle sidebar"
                     >
-                        <Menu size={24} style={{ color: '#3b82f6' }} />
+                        <Menu size={24} style={{ color: colors.accent }} />
                     </button>
 
                     {/* User Profile Dropdown */}
@@ -137,20 +150,20 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, currentUser, onLogout 
                         <button
                             onClick={() => setDropdownOpen(!dropdownOpen)}
                             className="flex items-center gap-2 p-1 rounded-lg transition-colors"
-                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.hoverBg}
                             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                             aria-label="User menu"
                         >
                             {/* Avatar */}
-                            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: '#3b82f6' }}>
+                            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: colors.accent }}>
                                 <span className="text-white text-sm font-bold">
                                     {currentUser?.username?.charAt(0).toUpperCase() || 'U'}
                                 </span>
                             </div>
                             <ChevronDown
                                 size={16}
-                                className={`text-text-secondary transition-transform ${dropdownOpen ? 'rotate-180' : ''
-                                    }`}
+                                style={{ color: colors.textSecondary }}
+                                className={`transition-transform ${dropdownOpen ? 'rotate-180' : ''}`}
                             />
                         </button>
 
@@ -159,16 +172,16 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, currentUser, onLogout 
                             <div
                                 className="absolute right-0 mt-2 w-52 rounded-lg shadow-2xl"
                                 style={{
-                                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                                    backgroundColor: colors.dropdownBg,
                                     backdropFilter: 'blur(12px)',
-                                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                                    border: `1px solid ${colors.borderColor}`,
                                     animation: 'dropdownEnter 150ms ease-out',
-                                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.6)',
+                                    boxShadow: isLight ? '0 8px 24px rgba(0, 0, 0, 0.15)' : '0 8px 24px rgba(0, 0, 0, 0.6)',
                                 }}
                             >
                                 {/* User Info */}
-                                <div className="px-4 py-3 border-b" style={{ borderColor: 'rgba(59, 130, 246, 0.2)' }}>
-                                    <p className="text-sm font-semibold text-white">
+                                <div className="px-4 py-3 border-b" style={{ borderColor: colors.borderColor }}>
+                                    <p className="text-sm font-semibold" style={{ color: colors.textPrimary }}>
                                         {currentUser?.username || 'User'}
                                     </p>
                                     {currentUser?.role && (
@@ -189,11 +202,11 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, currentUser, onLogout 
                                             navigate('/settings');
                                             setDropdownOpen(false);
                                         }}
-                                        className="w-full flex items-center gap-3 px-4 py-2 text-sm text-white transition-colors"
-                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'}
+                                        className="w-full flex items-center gap-3 px-4 py-2 text-sm transition-colors"
+                                        style={{ color: colors.textPrimary }}
+                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.hoverBg}
                                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                                     >
-                                        <SettingsIcon size={16} style={{ color: '#3b82f6' }} />
                                         Settings
                                     </button>
 
@@ -214,7 +227,7 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, currentUser, onLogout 
                 </div>
             </div>
 
-            {/* Animation Keyframes */}
+            {/* Animation Keyframes & Placeholder Styling */}
             <style>{`
         @keyframes dropdownEnter {
           0% {
@@ -225,6 +238,9 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, currentUser, onLogout 
             opacity: 1;
             transform: scale(1) translateY(0);
           }
+        }
+        .header-search-input::placeholder {
+          color: #6b7280;
         }
       `}</style>
         </header>

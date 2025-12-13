@@ -2,7 +2,7 @@
 // SettingsPage - Application Configuration
 // ============================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Settings,
     User,
@@ -13,26 +13,26 @@ import {
     Moon,
     Sun,
     Globe,
-    Clock,
     Mail,
     Slack,
     Smartphone,
     LogOut
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 import AnimatedBackground from '../components/Common/AnimatedBackground';
 
 type TabType = 'general' | 'profile' | 'notifications' | 'security' | 'api';
 
 const SettingsPage: React.FC = () => {
     const { user } = useAuth();
+    const { theme, setTheme } = useTheme();
     const [activeTab, setActiveTab] = useState<TabType>('general');
     const [loading, setLoading] = useState(false);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-    // Mock Settings State
+    // Mock Settings State (synced with theme context)
     const [settings, setSettings] = useState({
-        theme: 'dark',
         language: 'en',
         timezone: 'UTC',
         emailAlerts: true,
@@ -40,6 +40,11 @@ const SettingsPage: React.FC = () => {
         mfaEnabled: true,
         sessionTimeout: 30
     });
+
+    // Sync theme from context on mount
+    useEffect(() => {
+        // Theme is now managed by context
+    }, [theme]);
 
     const handleSave = () => {
         setLoading(true);
@@ -75,14 +80,14 @@ const SettingsPage: React.FC = () => {
                                 </div>
                                 <div className="flex bg-dark-surface p-1 rounded-lg border border-accent-teal/10">
                                     <button
-                                        onClick={() => setSettings({ ...settings, theme: 'light' })}
-                                        className={`p-2 rounded-md transition-all ${settings.theme === 'light' ? 'bg-accent-teal text-dark-bg' : 'text-text-secondary hover:text-text-primary'}`}
+                                        onClick={() => setTheme('light')}
+                                        className={`p-2 rounded-md transition-all ${theme === 'light' ? 'bg-accent-teal text-dark-bg' : 'text-text-secondary hover:text-text-primary'}`}
                                     >
                                         <Sun size={18} />
                                     </button>
                                     <button
-                                        onClick={() => setSettings({ ...settings, theme: 'dark' })}
-                                        className={`p-2 rounded-md transition-all ${settings.theme === 'dark' ? 'bg-accent-teal text-dark-bg' : 'text-text-secondary hover:text-text-primary'}`}
+                                        onClick={() => setTheme('dark')}
+                                        className={`p-2 rounded-md transition-all ${theme === 'dark' ? 'bg-accent-teal text-dark-bg' : 'text-text-secondary hover:text-text-primary'}`}
                                     >
                                         <Moon size={18} />
                                     </button>
@@ -111,19 +116,16 @@ const SettingsPage: React.FC = () => {
                                 </div>
                                 <div>
                                     <label className="block text-text-secondary text-sm mb-2">Timezone</label>
-                                    <div className="relative">
-                                        <Clock size={16} className="absolute left-3 top-3 text-text-secondary" />
-                                        <select
-                                            value={settings.timezone}
-                                            onChange={(e) => setSettings({ ...settings, timezone: e.target.value })}
-                                            className="w-full bg-dark-bg border border-accent-teal/20 rounded-lg pl-10 pr-4 py-2 text-text-primary focus:outline-none focus:border-accent-teal"
-                                        >
-                                            <option value="UTC">UTC (Coordinated Universal Time)</option>
-                                            <option value="EST">EST (Eastern Standard Time)</option>
-                                            <option value="PST">PST (Pacific Standard Time)</option>
-                                            <option value="IST">IST (Indian Standard Time)</option>
-                                        </select>
-                                    </div>
+                                    <select
+                                        value={settings.timezone}
+                                        onChange={(e) => setSettings({ ...settings, timezone: e.target.value })}
+                                        className="w-full bg-dark-bg border border-accent-teal/20 rounded-lg px-4 py-2 text-text-primary focus:outline-none focus:border-accent-teal"
+                                    >
+                                        <option value="UTC">UTC (Coordinated Universal Time)</option>
+                                        <option value="EST">EST (Eastern Standard Time)</option>
+                                        <option value="PST">PST (Pacific Standard Time)</option>
+                                        <option value="IST">IST (Indian Standard Time)</option>
+                                    </select>
                                 </div>
                             </div>
                         </div>
@@ -322,7 +324,7 @@ const SettingsPage: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen relative overflow-hidden" style={{
+        <div className="min-h-full relative overflow-hidden" style={{
             background: 'radial-gradient(ellipse at center, #0a1628 0%, #020817 100%)'
         }}>
             {/* Animated Network Background */}
